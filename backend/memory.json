@@ -1427,6 +1427,35 @@
                     }
                 ]
             }
+        },
+        {
+            "role": "user",
+            "content": "Open a python tutorial and open the first useful link"
+        },
+        {
+            "role": "assistant",
+            "content": {
+                "status": "failed",
+                "steps": [
+                    {
+                        "step": 1,
+                        "action": {
+                            "action": "click",
+                            "target": "a python tutorial"
+                        },
+                        "status": "failed",
+                        "error": "Could not resolve target: a python tutorial"
+                    }
+                ]
+            }
+        },
+        {
+            "role": "user",
+            "content": "Search for Python tutorials, open the first search result, read the page, and tell me the title of the page."
+        },
+        {
+            "role": "user",
+            "content": "Search for Python tutorials, open the first search result, read the page, and tell me the title of the page."
         }
     ]
 }
