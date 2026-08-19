@@ -173,6 +173,57 @@ class AgentController:
 
             }
 
+        # =================================================
+        # MEMORY RECALL
+        # =================================================
+        # Retrieve relevant previous task memories before planning.
+        # Memory is observational in v1: the original user request
+        # remains unchanged and the ActionPlanner is not modified.
+        memory_matches = []
+
+        try:
+
+            memory_matches = self.knowledge.find_tasks(
+                user_message
+            )
+
+            if not isinstance(
+                memory_matches,
+                list
+            ):
+                memory_matches = []
+
+            print(
+                "\n🧠 MEMORY RECALL"
+            )
+
+            print(
+                f"Relevant previous task(s): "
+                f"{len(memory_matches)}"
+            )
+
+            for memory_item in memory_matches[:5]:
+
+                if isinstance(
+                    memory_item,
+                    dict
+                ):
+
+                    print(
+                        "  ↳ "
+                        f"{memory_item.get('task', '')}"
+                    )
+
+        except Exception as memory_error:
+
+            # Memory recall must never prevent planning.
+            memory_matches = []
+
+            print(
+                "⚠️ Memory recall failed: "
+                f"{memory_error}"
+            )
+
         try:
 
             steps = action_planner.plan(
@@ -247,6 +298,8 @@ class AgentController:
             "status": "success",
 
             "steps": steps,
+
+            "memory_recall": memory_matches[:5],
 
             "error": None
 
