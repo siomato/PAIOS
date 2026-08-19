@@ -1,12 +1,508 @@
+# ============================================================
+# app/core/action_executor.py
+#
+# PAIO ACTION EXECUTOR
+#
+# AgentState-aware execution
+#
+# Pipeline:
+#
+# Action Plan
+#      ↓
+# ActionExecutor
+#      ↓
+# AgentState updated
+#      ↓
+# Browser Tools
+#      ↓
+# Browser Telemetry
+#      ↓
+# Result
+#      ↓
+# AgentState observation
+# ============================================================
+
+
 from app.tools.browser_tools import browser_tools
+
 import time
 
 
 class ActionExecutor:
 
-    # =========================================================
+    # ========================================================
+    # INITIALIZATION
+    # ========================================================
+
+    def __init__(self):
+
+        print(
+            "⚙️ ACTION EXECUTOR MODULE LOADED ⚙️"
+        )
+
+    # ========================================================
+    # STATE HELPERS
+    # ========================================================
+
+    def _set_state(
+        self,
+        state,
+        attribute,
+        value
+    ):
+        """
+        Safely update AgentState.
+
+        Supports both:
+
+            state.set_status(...)
+
+        and:
+
+            state.status = ...
+
+        This keeps the executor compatible with
+        the existing AgentState implementation.
+        """
+
+        if state is None:
+            return
+
+        # ----------------------------------------------------
+        # Try dedicated setter first
+        # ----------------------------------------------------
+
+        try:
+
+            setter = getattr(
+                state,
+                f"set_{attribute}",
+                None
+            )
+
+            if callable(setter):
+
+                setter(
+                    value
+                )
+
+                return
+
+        except Exception:
+
+            pass
+
+        # ----------------------------------------------------
+        # Fallback to direct attribute
+        # ----------------------------------------------------
+
+        try:
+
+            setattr(
+                state,
+                attribute,
+                value
+            )
+
+        except Exception:
+
+            pass
+
+    # ========================================================
+    # COMPLETED STEP
+    # ========================================================
+
+    def _increment_completed(
+        self,
+        state,
+        step_number,
+        action
+    ):
+        """
+        Record a successfully completed action
+        in AgentState.
+        """
+
+        if state is None:
+            return
+
+        # ----------------------------------------------------
+        # Preferred AgentState API
+        # ----------------------------------------------------
+
+        try:
+
+            state.mark_step_completed(
+                step_number,
+                action
+            )
+
+            return
+
+        except Exception as e:
+
+            print(
+                f"⚠️ Could not record completed step "
+                f"through AgentState: {e}"
+            )
+
+        # ----------------------------------------------------
+        # Compatibility fallback
+        # ----------------------------------------------------
+
+        try:
+
+            completed_steps = getattr(
+                state,
+                "completed_steps",
+                None
+            )
+
+            if isinstance(
+                completed_steps,
+                list
+            ):
+
+                completed_steps.append({
+                    "step": step_number,
+                    "action": action
+                })
+
+        except Exception:
+
+            pass
+
+    # ========================================================
+    # FAILED STEP
+    # ========================================================
+
+    def _record_failure(
+        self,
+        state,
+        step_number,
+        error
+    ):
+        """
+        Record the failed step and error
+        in AgentState.
+        """
+
+        if state is None:
+            return
+
+        # ----------------------------------------------------
+        # Preferred AgentState API
+        # ----------------------------------------------------
+
+        try:
+
+            state.mark_step_failed(
+                step_number,
+                error
+            )
+
+            return
+
+        except Exception as e:
+
+            print(
+                f"⚠️ Could not record failed step "
+                f"through AgentState: {e}"
+            )
+
+        # ----------------------------------------------------
+        # Compatibility fallback
+        # ----------------------------------------------------
+
+        try:
+
+            state.failed_step = step_number
+
+            state.last_error = str(
+                error
+            )
+
+        except Exception:
+
+            pass
+
+    # ========================================================
+    # ACTION HISTORY
+    # ========================================================
+
+    def _record_action_history(
+        self,
+        state,
+        action,
+        result
+    ):
+        """
+        Record every executed action into AgentState
+        and TaskContext.
+        """
+
+        if state is None:
+            return
+
+        if not isinstance(result, dict):
+            return
+
+        action_record = {
+            "action": action,
+            "status": result.get("status"),
+            "result": result,
+            "error": result.get("error"),
+            "step": getattr(
+                state,
+                "current_step",
+                None
+            )
+        }
+
+        # ----------------------------------------------------
+        # AgentState V2
+        # ----------------------------------------------------
+
+        try:
+
+            recorder = getattr(
+                state,
+                "record_action",
+                None
+            )
+
+            if callable(recorder):
+
+                recorder(
+                    action=action,
+                    result=result,
+                    success=(
+                        result.get("status")
+                        == "success"
+                    ),
+                    error=result.get("error")
+                )
+
+                return
+
+        except Exception as e:
+
+            print(
+                f"⚠️ Could not record action "
+                f"through AgentState: {e}"
+            )
+
+        # ----------------------------------------------------
+        # Compatibility fallback
+        # ----------------------------------------------------
+
+        try:
+
+            history = getattr(
+                state,
+                "action_history",
+                None
+            )
+
+            if isinstance(
+                history,
+                list
+            ):
+
+                history.append(
+                    action_record
+                )
+
+        except Exception:
+
+            pass
+
+    # ========================================================
+    # OBSERVATION
+    # ========================================================
+
+    def _record_observation(
+        self,
+        state,
+        action,
+        result
+    ):
+        """
+        Store the result of an executed action
+        as an AgentState observation.
+        """
+
+        if state is None:
+            return
+
+        if not isinstance(
+            result,
+            dict
+        ):
+            return
+
+        observation = {
+            "action": action,
+            "status": result.get(
+                "status"
+            ),
+            "message": result.get(
+                "message"
+            ),
+            "data": result.get(
+                "data"
+            ),
+            "error": result.get(
+                "error"
+            )
+        }
+
+        try:
+
+            state.add_observation(
+                observation
+            )
+
+        except Exception as e:
+
+            print(
+                f"⚠️ Could not record observation: {e}"
+            )
+
+    # ========================================================
+    # BROWSER TELEMETRY
+    # ========================================================
+
+    def _update_browser_state(
+        self,
+        state
+    ):
+        """
+        Capture the current browser URL and page title
+        and store them in AgentState.
+
+        The existing BrowserTools.read_page() already
+        returns:
+
+            {
+                "title": ...,
+                "url": ...,
+                "content": ...
+            }
+
+        Therefore we use that existing API rather than
+        introducing another browser abstraction.
+        """
+
+        if state is None:
+            return
+
+        try:
+
+            telemetry = browser_tools.read_page()
+
+            # ------------------------------------------------
+            # Validate response
+            # ------------------------------------------------
+
+            if not isinstance(
+                telemetry,
+                dict
+            ):
+
+                print(
+                    "⚠️ Browser telemetry returned "
+                    "an unexpected response."
+                )
+
+                return
+
+            # ------------------------------------------------
+            # Extract URL
+            # ------------------------------------------------
+
+            current_url = (
+                telemetry.get("url")
+                or ""
+            )
+
+            # ------------------------------------------------
+            # Extract page title
+            # ------------------------------------------------
+
+            page_title = (
+                telemetry.get("title")
+                or ""
+            )
+
+            # ------------------------------------------------
+            # Update AgentState
+            # ------------------------------------------------
+
+            state.update_browser_state(
+                current_url=current_url,
+                page_title=page_title
+            )
+
+            print(
+                f"🌐 State URL: {current_url}"
+            )
+
+            print(
+                f"📄 State title: {page_title}"
+            )
+
+        except Exception as e:
+
+            print(
+                f"⚠️ Browser telemetry unavailable: {e}"
+            )
+
+    # ========================================================
+    # CURRENT STEP
+    # ========================================================
+
+    def _set_current_step(
+        self,
+        state,
+        step_number
+    ):
+        """
+        Update the currently executing step.
+        """
+
+        if state is None:
+            return
+
+        # ----------------------------------------------------
+        # Preferred AgentState API
+        # ----------------------------------------------------
+
+        try:
+
+            state.set_current_step(
+                step_number
+            )
+
+            return
+
+        except Exception:
+
+            pass
+
+        # ----------------------------------------------------
+        # Compatibility fallback
+        # ----------------------------------------------------
+
+        self._set_state(
+            state,
+            "current_step",
+            step_number
+        )
+
+    # ========================================================
     # RESULT HELPERS
-    # =========================================================
+    # ========================================================
 
     def _success(
         self,
@@ -16,8 +512,6 @@ class ActionExecutor:
     ):
         """
         Standard success response.
-
-        Every successful action returns the same structure.
         """
 
         return {
@@ -29,7 +523,7 @@ class ActionExecutor:
             "recoverable": False
         }
 
-    # ---------------------------------------------------------
+    # ========================================================
 
     def _failure(
         self,
@@ -50,14 +544,32 @@ class ActionExecutor:
             "recoverable": recoverable
         }
 
-    # =========================================================
+    # ========================================================
     # EXECUTE ONE ACTION
-    # =========================================================
+    # ========================================================
 
     def execute_action(
         self,
-        action
+        action,
+        state=None
     ):
+        """
+        Execute one browser action.
+
+        Supported actions:
+
+            search
+            click
+            find
+            read
+            fill
+            press
+            open_url
+        """
+
+        # ====================================================
+        # VALIDATE ACTION
+        # ====================================================
 
         if not isinstance(
             action,
@@ -75,6 +587,18 @@ class ActionExecutor:
             or ""
         ).strip().lower()
 
+        # ====================================================
+        # UPDATE AGENT STATE
+        # ====================================================
+
+        if state is not None:
+
+            self._set_state(
+                state,
+                "status",
+                "executing"
+            )
+
         print(
             "\n---------- ACTION ----------"
         )
@@ -83,9 +607,9 @@ class ActionExecutor:
             f"Action type: {action_type}"
         )
 
-        # =====================================================
+        # ====================================================
         # SEARCH
-        # =====================================================
+        # ====================================================
 
         if action_type == "search":
 
@@ -136,9 +660,9 @@ class ActionExecutor:
                     recoverable=True
                 )
 
-        # =====================================================
+        # ====================================================
         # CLICK
-        # =====================================================
+        # ====================================================
 
         if action_type == "click":
 
@@ -189,9 +713,89 @@ class ActionExecutor:
                     recoverable=True
                 )
 
-        # =====================================================
+                # ====================================================
+        # FIND
+        # ====================================================
+
+        if action_type == "find":
+
+            query = (
+                action.get("query")
+                or ""
+            ).strip()
+
+            if not query:
+
+                return self._failure(
+                    "find",
+                    "Find query is empty.",
+                    recoverable=False
+                )
+
+            print(
+                f"🔎 Executing find: {query}"
+            )
+
+            try:
+
+                start_time = time.time()
+
+                # ------------------------------------------------
+                # FIND uses BrowserTools.find().
+                #
+                # FIND is intentionally separate from CLICK:
+                #
+                #     find asyncio
+                #
+                # resolves the target without executing a click.
+                #
+                # The planner/executor contract is:
+                #
+                #     {"action": "find", "query": "..."}
+                # ------------------------------------------------
+
+                finder = getattr(
+                    browser_tools,
+                    "find",
+                    None
+                )
+
+                if not callable(finder):
+
+                    return self._failure(
+                        "find",
+                        "BrowserTools.find() is not available.",
+                        recoverable=False
+                    )
+
+                result = finder(
+                    query
+                )
+
+                duration = round(
+                    time.time() - start_time,
+                    3
+                )
+
+                return self._success(
+                    "find",
+                    data=result,
+                    message=(
+                        f"Find completed in "
+                        f"{duration}s."
+                    )
+                )
+
+            except Exception as e:
+
+                return self._failure(
+                    "find",
+                    e,
+                    recoverable=True
+                )
+        # ====================================================
         # READ PAGE
-        # =====================================================
+        # ====================================================
 
         if action_type == "read":
 
@@ -227,9 +831,9 @@ class ActionExecutor:
                     recoverable=True
                 )
 
-        # =====================================================
+        # ====================================================
         # FILL
-        # =====================================================
+        # ====================================================
 
         if action_type == "fill":
 
@@ -280,9 +884,9 @@ class ActionExecutor:
                     recoverable=True
                 )
 
-        # =====================================================
+        # ====================================================
         # PRESS
-        # =====================================================
+        # ====================================================
 
         if action_type == "press":
 
@@ -333,9 +937,9 @@ class ActionExecutor:
                     recoverable=True
                 )
 
-        # =====================================================
+        # ====================================================
         # OPEN URL
-        # =====================================================
+        # ====================================================
 
         if action_type == "open_url":
 
@@ -386,9 +990,9 @@ class ActionExecutor:
                     recoverable=True
                 )
 
-        # =====================================================
+        # ====================================================
         # UNKNOWN ACTION
-        # =====================================================
+        # ====================================================
 
         return self._failure(
             action_type or "unknown",
@@ -396,16 +1000,47 @@ class ActionExecutor:
             recoverable=False
         )
 
-    # =========================================================
+    # ========================================================
     # EXECUTE COMPLETE PLAN
-    # =========================================================
+    # ========================================================
 
     def execute(
         self,
-        steps
+        steps,
+        state=None
     ):
+        """
+        Execute a complete plan sequentially.
+
+        `state` is optional so existing callers remain
+        compatible.
+
+        Example:
+
+            action_executor.execute(
+                steps,
+                state
+            )
+        """
 
         results = []
+
+        # ----------------------------------------------------
+        # Validate steps
+        # ----------------------------------------------------
+
+        if steps is None:
+
+            steps = []
+
+        if not isinstance(
+            steps,
+            list
+        ):
+
+            steps = list(
+                steps
+            )
 
         total_steps = len(
             steps
@@ -419,22 +1054,54 @@ class ActionExecutor:
             f"Total steps: {total_steps}"
         )
 
-        # =====================================================
+        # ====================================================
+        # INITIAL STATE
+        # ====================================================
+
+        if state is not None:
+
+            self._set_state(
+                state,
+                "status",
+                "executing"
+            )
+
+            self._set_current_step(
+                state,
+                0
+            )
+
+        # ====================================================
         # EMPTY PLAN
-        # =====================================================
+        # ====================================================
 
         if total_steps == 0:
+
+            if state is not None:
+
+                self._set_state(
+                    state,
+                    "status",
+                    "failed"
+                )
+
+                self._record_failure(
+                    state,
+                    0,
+                    "No actions to execute."
+                )
 
             return {
                 "status": "failed",
                 "steps": [],
                 "failed_step": None,
-                "error": "No actions to execute."
+                "error": "No actions to execute.",
+                "recoverable": False
             }
 
-        # =====================================================
+        # ====================================================
         # EXECUTE SEQUENTIALLY
-        # =====================================================
+        # ====================================================
 
         for index, action in enumerate(
             steps,
@@ -451,17 +1118,37 @@ class ActionExecutor:
                 f"Action: {action}"
             )
 
-            # -------------------------------------------------
-            # Execute action
-            # -------------------------------------------------
+            # ------------------------------------------------
+            # UPDATE CURRENT STEP
+            # ------------------------------------------------
 
-            result = self.execute_action(
-                action
+            self._set_current_step(
+                state,
+                index
             )
 
-            # -------------------------------------------------
-            # Store execution record
-            # -------------------------------------------------
+            # ------------------------------------------------
+            # EXECUTE ACTION
+            # ------------------------------------------------
+
+            result = self.execute_action(
+                action,
+                state=state
+            )
+
+            # ------------------------------------------------
+            # RECORD ACTION HISTORY
+            # ------------------------------------------------
+
+            self._record_action_history(
+                state,
+                action,
+                result
+            )
+
+            # ------------------------------------------------
+            # STORE EXECUTION RECORD
+            # ------------------------------------------------
 
             execution_record = {
                 "step": index,
@@ -479,6 +1166,49 @@ class ActionExecutor:
             # =================================================
 
             if result["status"] == "success":
+
+                # ------------------------------------------------
+                # Record completed action
+                # ------------------------------------------------
+
+                self._increment_completed(
+                    state,
+                    index,
+                    action
+                )
+
+                # ------------------------------------------------
+                # Record action observation
+                # ------------------------------------------------
+
+                self._record_observation(
+                    state,
+                    action,
+                    result
+                )
+
+                # ------------------------------------------------
+                # Capture browser telemetry
+                # ------------------------------------------------
+
+                self._update_browser_state(
+                    state
+                )
+
+                # ------------------------------------------------
+                # Clear previous failure information
+                # ------------------------------------------------
+
+                if state is not None:
+
+                    try:
+
+                        state.failed_step = None
+                        state.last_error = None
+
+                    except Exception:
+
+                        pass
 
                 print(
                     f"✅ Step {index} completed."
@@ -503,11 +1233,43 @@ class ActionExecutor:
                 f"{result['recoverable']}"
             )
 
-            # -------------------------------------------------
-            # STOP ON FAILURE
-            #
-            # Recovery layer will use this information later.
-            # -------------------------------------------------
+            # ------------------------------------------------
+            # Record failed step
+            # ------------------------------------------------
+
+            self._record_failure(
+                state,
+                index,
+                result["error"]
+            )
+
+            # ------------------------------------------------
+            # Record failure observation
+            # ------------------------------------------------
+
+            self._record_observation(
+                state,
+                action,
+                result
+            )
+
+            # ------------------------------------------------
+            # Capture browser state even after failure
+            # ------------------------------------------------
+
+            self._update_browser_state(
+                state
+            )
+
+            # ------------------------------------------------
+            # Update AgentState
+            # ------------------------------------------------
+
+            self._set_state(
+                state,
+                "status",
+                "failed"
+            )
 
             print(
                 "\n🛑 Execution stopped "
@@ -522,9 +1284,27 @@ class ActionExecutor:
                 "recoverable": result["recoverable"]
             }
 
-        # =====================================================
+        # ====================================================
         # ALL ACTIONS SUCCESSFUL
-        # =====================================================
+        # ====================================================
+
+        self._set_state(
+            state,
+            "status",
+            "completed"
+        )
+
+        self._set_state(
+            state,
+            "failed_step",
+            None
+        )
+
+        self._set_state(
+            state,
+            "last_error",
+            None
+        )
 
         print(
             "\n🎉 All actions completed successfully."
@@ -539,8 +1319,8 @@ class ActionExecutor:
         }
 
 
-# =============================================================
+# ============================================================
 # GLOBAL INSTANCE
-# =============================================================
+# ============================================================
 
 action_executor = ActionExecutor()

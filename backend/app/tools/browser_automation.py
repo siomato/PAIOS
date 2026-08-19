@@ -51,10 +51,60 @@ class BrowserAutomation:
             return False
 
     # =========================================================
+    # PAGE CONTRACT CHECK
+    # =========================================================
+
+    def _is_valid_page(self, page):
+        """
+        Verify that the object is a real Playwright Page.
+
+        BrowserAutomation.start() has one strict contract:
+        it ALWAYS returns a Playwright Page object.
+        """
+
+        if page is None:
+            return False
+
+        if isinstance(page, dict):
+            return False
+
+        required_methods = (
+            "goto",
+            "locator",
+            "title",
+            "is_closed",
+        )
+
+        for method_name in required_methods:
+
+            if not callable(
+                getattr(
+                    page,
+                    method_name,
+                    None
+                )
+            ):
+                return False
+
+        try:
+            page.is_closed()
+        except Exception:
+            return False
+
+        return True
+
+    # =========================================================
     # START BROWSER
     # =========================================================
 
     def start(self):
+        """
+        Start or reuse the browser session.
+
+        STRICT CONTRACT:
+        This method ALWAYS returns a Playwright Page.
+        It must never return a dictionary or application result.
+        """
 
         # -----------------------------------------------------
         # Reuse existing browser
@@ -62,7 +112,16 @@ class BrowserAutomation:
 
         if self._session_alive():
 
-            return self.page
+            if self._is_valid_page(
+                self.page
+            ):
+                return self.page
+
+            print(
+                "⚠️ Invalid browser page object detected."
+            )
+
+            self._cleanup()
 
         # -----------------------------------------------------
         # Remove stale session
@@ -74,26 +133,122 @@ class BrowserAutomation:
             "🌐 Starting fresh Playwright session..."
         )
 
-        self.playwright = sync_playwright().start()
+        # -----------------------------------------------------
+        # Start Playwright
+        # -----------------------------------------------------
 
-        self.browser = self.playwright.chromium.launch(
-            headless=False
+        self.playwright = (
+            sync_playwright().start()
         )
 
-        self.context = self.browser.new_context(
-            viewport={
-                "width": 1366,
-                "height": 768
-            }
+        # -----------------------------------------------------
+        # Launch Chromium
+        # -----------------------------------------------------
+
+        self.browser = (
+            self.playwright.chromium.launch(
+                headless=False
+            )
         )
 
-        self.page = self.context.new_page()
+        # -----------------------------------------------------
+        # Create browser context
+        # -----------------------------------------------------
+
+        self.context = (
+            self.browser.new_context(
+                viewport={
+                    "width": 1366,
+                    "height": 768
+                }
+            )
+        )
+
+        # -----------------------------------------------------
+        # Create page
+        # -----------------------------------------------------
+
+        self.page = (
+            self.context.new_page()
+        )
+
+        # -----------------------------------------------------
+        # STRICT CONTRACT CHECK
+        # -----------------------------------------------------
+
+        if not self._is_valid_page(
+            self.page
+        ):
+
+            print(
+                "❌ BrowserAutomation.start() created "
+                "an invalid page object."
+            )
+
+            self._cleanup()
+
+            raise RuntimeError(
+                "BrowserAutomation.start() must return "
+                "a Playwright Page."
+            )
 
         print(
             "✅ Browser session ready."
         )
 
+        print(
+            "✅ BrowserAutomation.start() contract verified: "
+            "Playwright Page."
+        )
+
         return self.page
+
+    # =========================================================
+    # BROWSER STATE
+    # =========================================================
+
+    def get_browser_state(self):
+        """
+        Return browser telemetry as plain Python data.
+
+        Playwright objects remain inside BrowserAutomation.
+        Only normal Python values are returned.
+        """
+
+        try:
+
+            page = self.start()
+
+            current_url = None
+            page_title = None
+
+            try:
+                current_url = page.url
+            except Exception:
+                pass
+
+            try:
+                page_title = page.title()
+            except Exception:
+                pass
+
+            return {
+                "current_url": current_url,
+                "page_title": page_title,
+                "error": None
+            }
+
+        except Exception as e:
+
+            print(
+                f"⚠️ Browser state failed: {e}"
+            )
+
+            return {
+                "current_url": None,
+                "page_title": None,
+                "error": str(e)
+            }
 
     # =========================================================
     # OPEN URL
@@ -1213,9 +1368,78 @@ class BrowserAutomation:
                 f"⌨️ Pressing key: {key}"
             )
 
+            before_url = page.url
+
             page.keyboard.press(
                 key
             )
+
+            # -------------------------------------------------
+            # Navigation synchronization for Enter
+            # -------------------------------------------------
+
+            if key.casefold() == "enter":
+
+                print(
+                    "⏳ Checking for navigation..."
+                )
+
+                try:
+
+                    page.wait_for_function(
+                        """
+                        (beforeUrl) => {
+                            return window.location.href !== beforeUrl;
+                        }
+                        """,
+                        before_url,
+                        timeout=10000
+                    )
+
+                    print(
+                        "🌐 Navigation detected."
+                    )
+
+                except Exception:
+
+                    print(
+                        "ℹ️ No URL change detected."
+                    )
+
+                try:
+
+                    page.wait_for_load_state(
+                        "domcontentloaded",
+                        timeout=10000
+                    )
+
+                except Exception:
+
+                    print(
+                        "ℹ️ DOMContentLoaded wait timed out."
+                    )
+
+                try:
+
+                    page.wait_for_timeout(
+                        300
+                    )
+
+                except Exception:
+                    pass
+
+                print(
+                    f"🌐 Final URL: {page.url}"
+                )
+
+                try:
+
+                    print(
+                        f"📄 Final title: {page.title()}"
+                    )
+
+                except Exception:
+                    pass
 
             return (
                 f"Pressed {key}"
@@ -1227,154 +1451,260 @@ class BrowserAutomation:
                 f"Press failed: {e}"
             )
 
+
     # =========================================================
     # FILL FROM COMMAND
     # =========================================================
 
     def fill_from_command(
         self,
-        command: str
+        target: str,
+        text: str
     ):
+        """
+        Fill a browser input identified by a natural-language target.
 
-        if not command:
+        Example:
+            target = "search box"
+            text = "Python asyncio tutorial"
+        """
 
-            return (
-                "Fill failed: "
-                "command is empty."
-            )
+        if not target or not target.strip():
+            return "Fill failed: target is empty."
+
+        if text is None:
+            return "Fill failed: text is empty."
+
+        target = " ".join(
+            str(target).split()
+        ).strip()
+
+        text = str(text)
 
         try:
 
             page = self.start()
 
-            # -------------------------------------------------
-            # Expected formats:
-            #
-            # fill search box with Python
-            # fill "Python" into search box
-            # -------------------------------------------------
-
-            command_lower = command.lower()
-
-            if " with " in command_lower:
-
-                index = command_lower.find(
-                    " with "
+            if page is None:
+                return (
+                    "Fill failed: "
+                    "browser page is not available."
                 )
 
-                target = (
-                    command[:index]
-                    .strip()
-                )
-
-                text = (
-                    command[index + 6:]
-                    .strip()
-                )
-
-            else:
-
-                target = command
-                text = ""
-
-            # -------------------------------------------------
-            # Remove quotes
-            # -------------------------------------------------
-
-            text = text.strip(
-                "\"'"
+            normalized_target = (
+                " ".join(
+                    target.split()
+                ).casefold()
             )
 
-            # -------------------------------------------------
-            # Search box
-            # -------------------------------------------------
+            print(
+                "\n========== FILL TARGET =========="
+            )
+            print(f"Target: {target}")
+            print(f"Text: {text}")
+            print(
+                f"Normalized target: {normalized_target}"
+            )
 
-            if (
-                "search box" in target.lower()
-                or "search field" in target.lower()
-                or target.lower() == "search"
-            ):
+            aliases = {
+                "search box": {
+                    "search",
+                    "search box",
+                    "search field",
+                    "search input",
+                    "search bar",
+                },
+                "email": {
+                    "email",
+                    "email field",
+                    "email input",
+                    "email address",
+                },
+                "username": {
+                    "username",
+                    "username field",
+                    "username input",
+                    "user name",
+                },
+                "password": {
+                    "password",
+                    "password field",
+                    "password input",
+                },
+                "message": {
+                    "message",
+                    "message field",
+                    "message box",
+                    "message input",
+                    "message area",
+                    "text area",
+                },
+            }
 
-                selector = (
-                    'textarea[name="q"], '
-                    'input[name="q"]'
-                )
+            target_variants = aliases.get(
+                normalized_target,
+                {normalized_target}
+            )
 
-                element = page.locator(
-                    selector
-                ).first
+            selectors = [
+                "input",
+                "textarea",
+                "[contenteditable='true']",
+            ]
 
-                element.wait_for(
-                    state="visible",
-                    timeout=10000
-                )
-
-                element.fill(
-                    text
-                )
-
-                return (
-                    f"Filled search box "
-                    f"with '{text}'"
-                )
-
-            # -------------------------------------------------
-            # Try exact text target
-            # -------------------------------------------------
-
-            elements = page.locator(
-                "input, textarea"
-            ).all()
-
-            for element in elements:
+            for selector in selectors:
 
                 try:
-
-                    placeholder = (
-                        element.get_attribute(
-                            "placeholder"
-                        )
-                        or ""
+                    elements = page.locator(
+                        selector
+                    ).all()
+                except Exception as selector_error:
+                    print(
+                        "⚠️ Could not inspect selector "
+                        f"{selector}: {selector_error}"
                     )
+                    continue
 
-                    name = (
-                        element.get_attribute(
-                            "name"
+                for element in elements:
+
+                    try:
+
+                        if not element.is_visible():
+                            continue
+
+                        placeholder = (
+                            element.get_attribute(
+                                "placeholder"
+                            ) or ""
+                        ).strip().casefold()
+
+                        name = (
+                            element.get_attribute(
+                                "name"
+                            ) or ""
+                        ).strip().casefold()
+
+                        aria_label = (
+                            element.get_attribute(
+                                "aria-label"
+                            ) or ""
+                        ).strip().casefold()
+
+                        title = (
+                            element.get_attribute(
+                                "title"
+                            ) or ""
+                        ).strip().casefold()
+
+                        element_id = (
+                            element.get_attribute(
+                                "id"
+                            ) or ""
+                        ).strip().casefold()
+
+                        input_type = (
+                            element.get_attribute(
+                                "type"
+                            ) or ""
+                        ).strip().casefold()
+
+                        candidates = {
+                            placeholder,
+                            name,
+                            aria_label,
+                            title,
+                            element_id,
+                            input_type,
+                        }
+
+                        candidates.discard("")
+
+                        print(
+                            "🔎 Candidate:",
+                            candidates
                         )
-                        or ""
-                    )
 
-                    aria = (
-                        element.get_attribute(
-                            "aria-label"
+                        matched = False
+
+                        for candidate in candidates:
+                            if candidate in target_variants:
+                                matched = True
+                                break
+
+                        if not matched:
+                            for candidate in candidates:
+                                for variant in target_variants:
+                                    if (
+                                        variant
+                                        and (
+                                            variant in candidate
+                                            or candidate in variant
+                                        )
+                                    ):
+                                        matched = True
+                                        break
+                                if matched:
+                                    break
+
+                        if not matched and normalized_target in {
+                            "search",
+                            "search box",
+                            "search field",
+                            "search input",
+                            "search bar",
+                        }:
+                            if input_type == "search":
+                                matched = True
+
+                        if not matched and normalized_target in {
+                            "email",
+                            "email field",
+                            "email input",
+                            "email address",
+                        }:
+                            if input_type == "email":
+                                matched = True
+
+                        if not matched and normalized_target in {
+                            "password",
+                            "password field",
+                            "password input",
+                        }:
+                            if input_type == "password":
+                                matched = True
+
+                        if not matched:
+                            continue
+
+                        print(
+                            "\n🎯 FILL TARGET RESOLVED"
                         )
-                        or ""
-                    )
+                        print(f"   Target      : {target}")
+                        print(f"   Placeholder : {placeholder}")
+                        print(f"   Name        : {name}")
+                        print(f"   ARIA label  : {aria_label}")
+                        print(f"   ID          : {element_id}")
+                        print(f"   Type        : {input_type}")
 
-                    combined = (
-                        f"{placeholder} "
-                        f"{name} "
-                        f"{aria}"
-                    ).lower()
+                        element.scroll_into_view_if_needed()
+                        element.fill(text)
 
-                    if (
-                        target.lower()
-                        in combined
-                    ):
-
-                        element.fill(
-                            text
+                        print(
+                            "✅ Input filled successfully."
                         )
 
                         return (
-                            f"Filled "
-                            f"{target} "
+                            f"Filled {target} "
                             f"with '{text}'"
                         )
 
-                except Exception:
+                    except Exception as element_error:
 
-                    continue
+                        print(
+                            "⚠️ Input candidate failed: "
+                            f"{element_error}"
+                        )
+                        continue
 
             return (
                 "Fill failed: "
@@ -1386,6 +1716,7 @@ class BrowserAutomation:
             return (
                 f"Fill failed: {e}"
             )
+
 
     # =========================================================
     # READ PAGE

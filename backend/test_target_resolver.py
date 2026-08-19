@@ -1,5 +1,5 @@
 from app.tools.browser_automation import browser_automation
-from app.tools.target_resolver import target_resolver
+from backend.app.tools.target_resolver import target_resolver
 
 
 print(

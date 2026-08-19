@@ -80,7 +80,7 @@ print("-" * 70)
 print(USER_REQUEST)
 
 print("\nTEST CONFIGURATION")
-print("-" * 70)
+print("-" * 70);
 print(
     f"Forced click failures: {FORCED_FAILURES}"
 )
@@ -493,7 +493,7 @@ if execution_status == "success":
 
     print(
         "✅ Execution engine finished successfully."
-    )
+    );
 
 else:
 

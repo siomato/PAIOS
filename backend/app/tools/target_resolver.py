@@ -1,136 +1,152 @@
+import re
+from urllib.parse import urljoin
+
 from app.tools.page_analyzer import page_analyzer
 from app.tools.browser_automation import browser_automation
 
 
-print("🔥 TARGET RESOLVER MODULE LOADED 🔥")
+print("🔥 TARGET RESOLVER V2 LOADED 🔥")
 
 
 class TargetResolver:
 
     # =========================================================
-    # NORMALIZE INSTRUCTION
+    # NORMALIZE TARGET
     # =========================================================
 
     def _normalize(self, instruction: str):
 
         if not instruction:
-
             return ""
 
-        instruction = (
-            instruction
-            .lower()
-            .strip()
-        )
+        text = str(instruction).lower().strip()
 
-        # Remove common filler words
+        # Remove punctuation
+        text = re.sub(
+            r"[.!?,;:]+$",
+            "",
+            text
+        ).strip()
+
+        # Remove common action prefixes
         prefixes = [
+            "click on ",
+            "click the ",
+            "click ",
+            "press ",
+            "select ",
+            "choose ",
+            "tap ",
+            "open ",
+            "go to ",
+        ]
+
+        changed = True
+
+        while changed:
+
+            changed = False
+
+            for prefix in prefixes:
+
+                if text.startswith(prefix):
+
+                    text = text[
+                        len(prefix):
+                    ].strip()
+
+                    changed = True
+
+                    break
+
+        # Remove articles
+        for prefix in (
             "the ",
             "a ",
             "an ",
+        ):
+
+            if text.startswith(prefix):
+
+                text = text[
+                    len(prefix):
+                ].strip()
+
+                break
+
+        # -----------------------------------------------------
+        # IMPORTANT FIX
+        #
+        # "Downloads link"
+        #       ↓
+        # "Downloads"
+        #
+        # "Login button"
+        #       ↓
+        # "Login"
+        #
+        # "Settings tab"
+        #       ↓
+        # "Settings"
+        # -----------------------------------------------------
+
+        suffixes = [
+            " link",
+            " button",
+            " tab",
+            " menu",
+            " option",
+            " item",
+            " element",
         ]
 
-        for prefix in prefixes:
+        for suffix in suffixes:
 
-            if instruction.startswith(prefix):
+            if text.endswith(suffix):
 
-                instruction = (
-                    instruction[
-                        len(prefix):
-                    ]
-                    .strip()
-                )
+                text = text[
+                    :-len(suffix)
+                ].strip()
 
-        return instruction
+                break
+
+        return text
+
 
     # =========================================================
-    # RESOLVE FIRST SEARCH RESULT
+    # SEARCH RESULTS
     # =========================================================
 
-    def _resolve_first_search_result(
-        self
-    ):
-
-        print(
-            "🔎 Resolving first search result..."
-        )
+    def _resolve_first_search_result(self):
 
         results = (
             browser_automation
             .get_search_results()
         )
 
-        print(
-            f"📋 Search result candidates: "
-            f"{len(results)}"
-        )
-
         if not results:
-
-            print(
-                "⚠️ No stored search results."
-            )
-
             return None
 
-        result = results[0]
+        return results[0]
 
-        print(
-            f"🎯 Resolved first result: "
-            f"{result.get('title', '')}"
-        )
 
-        return result
-
-    # =========================================================
-    # RESOLVE LAST SEARCH RESULT
-    # =========================================================
-
-    def _resolve_last_search_result(
-        self
-    ):
-
-        print(
-            "🔎 Resolving last search result..."
-        )
+    def _resolve_last_search_result(self):
 
         results = (
             browser_automation
             .get_search_results()
         )
 
-        print(
-            f"📋 Search result candidates: "
-            f"{len(results)}"
-        )
-
         if not results:
-
-            print(
-                "⚠️ No stored search results."
-            )
-
             return None
 
-        result = results[-1]
+        return results[-1]
 
-        print(
-            f"🎯 Resolved last result: "
-            f"{result.get('title', '')}"
-        )
-
-        return result
-
-    # =========================================================
-    # RESOLVE NUMBERED RESULT
-    # =========================================================
 
     def _resolve_numbered_result(
         self,
         instruction
     ):
-
-        import re
 
         match = re.search(
             r"(?:result|link)\s+(\d+)",
@@ -138,7 +154,6 @@ class TargetResolver:
         )
 
         if not match:
-
             return None
 
         number = int(
@@ -150,37 +165,19 @@ class TargetResolver:
             .get_search_results()
         )
 
-        print(
-            f"📋 Search result candidates: "
-            f"{len(results)}"
-        )
-
-        if number < 1:
-
+        if (
+            number < 1 or
+            number > len(results)
+        ):
             return None
 
-        if number > len(results):
-
-            print(
-                f"⚠️ Result {number} "
-                f"is unavailable."
-            )
-
-            return None
-
-        result = results[
+        return results[
             number - 1
         ]
 
-        print(
-            f"🎯 Resolved result {number}: "
-            f"{result.get('title', '')}"
-        )
-
-        return result
 
     # =========================================================
-    # RESOLVE BY SEARCH RESULT TITLE
+    # SEARCH RESULT MATCH
     # =========================================================
 
     def _resolve_from_search_results(
@@ -194,10 +191,9 @@ class TargetResolver:
         )
 
         if not results:
-
             return None
 
-        instruction_words = set(
+        target_words = set(
             instruction.split()
         )
 
@@ -212,17 +208,13 @@ class TargetResolver:
                 or ""
             ).lower()
 
-            if not text:
-
-                continue
-
             words = set(
                 text.split()
             )
 
             score = len(
-                instruction_words
-                & words
+                target_words &
+                words
             )
 
             if score > best_score:
@@ -230,17 +222,60 @@ class TargetResolver:
                 best_score = score
                 best_result = result
 
-        if best_result:
-
-            print(
-                f"🎯 Best search-result match: "
-                f"{best_result.get('title', '')}"
-            )
-
         return best_result
 
+
     # =========================================================
-    # RESOLVE
+    # TARGET CANDIDATES / SEMANTIC ALIASES
+    # =========================================================
+
+    def _target_candidates(self, normalized: str):
+        """Return semantic candidates for natural-language targets."""
+
+        candidates = []
+
+        def add(value):
+            value = " ".join(str(value).casefold().split()).strip()
+            if value and value not in candidates:
+                candidates.append(value)
+
+        add(normalized)
+
+        aliases = {
+            "documentation page": [
+                "documentation",
+                "docs",
+                "python documentation",
+            ],
+            "documentation": [
+                "docs",
+                "python documentation",
+            ],
+            "download page": [
+                "downloads",
+                "download",
+            ],
+            "home page": [
+                "home",
+                "python",
+            ],
+        }
+
+        for alias in aliases.get(normalized, []):
+            add(alias)
+
+        simplified = re.sub(
+            r"\b(page|link|button|tab|menu|option|item|element)\b",
+            " ",
+            normalized,
+        )
+        add(simplified)
+
+        return candidates
+
+
+    # =========================================================
+    # MAIN RESOLVER
     # =========================================================
 
     def resolve(
@@ -249,11 +284,11 @@ class TargetResolver:
     ):
 
         print(
-            "\n========== TARGET RESOLVER =========="
+            "\n========== TARGET RESOLVER V2 =========="
         )
 
         print(
-            f"Target instruction: {instruction}"
+            f"🎯 Raw target: {instruction}"
         )
 
         normalized = self._normalize(
@@ -261,25 +296,26 @@ class TargetResolver:
         )
 
         print(
-            f"Normalized target: {normalized}"
+            f"🎯 Normalized target: {normalized}"
         )
 
         if not normalized:
 
             print(
-                "❌ Empty target."
+                "❌ Empty target"
             )
 
             return None
 
+
         # =====================================================
-        # FIRST SEARCH RESULT
+        # SPECIAL SEARCH TARGETS
         # =====================================================
 
         if (
             normalized == "first result"
-            or normalized == "first search result"
-            or "first search result" in normalized
+            or
+            normalized == "first search result"
         ):
 
             result = (
@@ -287,28 +323,17 @@ class TargetResolver:
             )
 
             if result:
-
                 print(
-                    "✅ Search target resolved."
-                )
-
-            else:
-
-                print(
-                    "❌ Could not resolve "
-                    "first search result."
+                    "✅ First search result resolved"
                 )
 
             return result
 
-        # =====================================================
-        # LAST SEARCH RESULT
-        # =====================================================
 
         if (
             normalized == "last result"
-            or normalized == "last search result"
-            or "last search result" in normalized
+            or
+            normalized == "last search result"
         ):
 
             result = (
@@ -316,23 +341,12 @@ class TargetResolver:
             )
 
             if result:
-
                 print(
-                    "✅ Search target resolved."
-                )
-
-            else:
-
-                print(
-                    "❌ Could not resolve "
-                    "last search result."
+                    "✅ Last search result resolved"
                 )
 
             return result
 
-        # =====================================================
-        # NUMBERED RESULT
-        # =====================================================
 
         numbered = (
             self._resolve_numbered_result(
@@ -341,22 +355,11 @@ class TargetResolver:
         )
 
         if numbered:
-
             return numbered
 
+
         # =====================================================
-        # PAGE ELEMENTS
-        #
-        # IMPORTANT:
-        # We only retrieve page elements AFTER
-        # checking search-result targets.
-        #
-        # This fixes the previous bug where:
-        #
-        # if not elements:
-        #     return None
-        #
-        # happened before "first search result".
+        # PAGE ANALYZER
         # =====================================================
 
         try:
@@ -374,41 +377,37 @@ class TargetResolver:
 
             elements = []
 
-        # =====================================================
-        # EXACT TEXT MATCH
-        # =====================================================
 
-        for element in elements:
-
-            text = (
-                element.get("text")
-                or ""
-            ).strip()
-
-            if not text:
-
-                continue
-
-            if (
-                normalized
-                == text.lower().strip()
-            ):
-
-                print(
-                    f"🎯 Exact match found: "
-                    f"{text}"
-                )
-
-                return element
-
-        # =====================================================
-        # PARTIAL TEXT MATCH
-        # =====================================================
-
-        instruction_words = (
-            normalized.split()
+        target_candidates = self._target_candidates(
+            normalized
         )
 
+        print(
+            f"🎯 Target candidates: {target_candidates}"
+        )
+
+        target_word_sets = {
+            candidate: set(
+                re.findall(
+                    r"[a-z0-9]+",
+                    candidate
+                )
+            )
+            for candidate in target_candidates
+        }
+
+        target_words = list(
+            target_word_sets.get(
+                normalized,
+                set()
+            )
+        )
+
+
+        # =====================================================
+        # PAGE ANALYZER EXACT MATCH
+        # =====================================================
+
         for element in elements:
 
             text = (
@@ -417,27 +416,517 @@ class TargetResolver:
             ).strip()
 
             if not text:
-
                 continue
 
-            text_lower = (
-                text.lower()
+            candidate_text = (
+                " ".join(
+                    text.casefold().split()
+                )
             )
 
-            if all(
-                word in text_lower
-                for word in instruction_words
-            ):
+            if candidate_text in target_candidates:
 
                 print(
-                    f"🎯 Partial match found: "
-                    f"{text}"
+                    f"🎯 Analyzer exact match: {text}"
                 )
 
                 return element
 
+
         # =====================================================
-        # SEARCH RESULT FUZZY MATCH
+        # PAGE ANALYZER WORD MATCH
+        # =====================================================
+
+        for element in elements:
+
+            text = (
+                element.get("text")
+                or ""
+            ).strip()
+
+            if not text:
+                continue
+
+            candidate_words = set(
+                re.findall(
+                    r"[a-z0-9]+",
+                    text.casefold()
+                )
+            )
+
+            alias_match = False
+
+            for words in target_word_sets.values():
+                if (
+                    words
+                    and
+                    all(
+                        word in candidate_words
+                        for word in words
+                    )
+                ):
+                    alias_match = True
+                    break
+
+            if alias_match:
+
+                print(
+                    f"🎯 Analyzer word match: {text}"
+                )
+
+                return element
+
+
+        # =====================================================
+        # LIVE DOM RESOLUTION
+        # =====================================================
+
+        print(
+            f"🔎 Live DOM resolution for: "
+            f"{normalized}"
+        )
+
+
+        try:
+
+            page = (
+                browser_automation
+                .start()
+            )
+
+        except Exception as e:
+
+            print(
+                f"⚠️ Browser unavailable: {e}"
+            )
+
+            page = None
+
+
+        if page is not None:
+
+            selectors = [
+
+                "a[href]",
+
+                "button",
+
+                "[role='link']",
+
+                "[role='button']",
+
+                "input[type='button']",
+
+                "input[type='submit']",
+
+            ]
+
+
+            best_candidate = None
+            best_data = None
+            best_score = 0
+
+
+            for selector in selectors:
+
+                try:
+
+                    elements = (
+                        page
+                        .locator(selector)
+                        .all()
+                    )
+
+                except Exception as e:
+
+                    print(
+                        f"⚠️ DOM scan failed "
+                        f"for {selector}: {e}"
+                    )
+
+                    continue
+
+
+                for element in elements:
+
+                    try:
+
+                        if not element.is_visible():
+                            continue
+
+
+                        # -------------------------------------------------
+                        # COLLECT CANDIDATE DATA
+                        # -------------------------------------------------
+
+                        visible_text = ""
+
+                        try:
+
+                            visible_text = (
+                                element
+                                .inner_text()
+                                .strip()
+                            )
+
+                        except Exception:
+                            pass
+
+
+                        text_content = ""
+
+                        try:
+
+                            text_content = (
+                                element
+                                .text_content()
+                                or ""
+                            ).strip()
+
+                        except Exception:
+                            pass
+
+
+                        aria = (
+                            element
+                            .get_attribute(
+                                "aria-label"
+                            )
+                            or ""
+                        )
+
+
+                        title = (
+                            element
+                            .get_attribute(
+                                "title"
+                            )
+                            or ""
+                        )
+
+
+                        value = (
+                            element
+                            .get_attribute(
+                                "value"
+                            )
+                            or ""
+                        )
+
+
+                        href = (
+                            element
+                            .get_attribute(
+                                "href"
+                            )
+                            or ""
+                        )
+
+
+                        # -------------------------------------------------
+                        # CANDIDATE VALUES
+                        # -------------------------------------------------
+
+                        values = [
+
+                            visible_text,
+
+                            text_content,
+
+                            aria,
+
+                            title,
+
+                            value,
+
+                            href,
+
+                        ]
+
+
+                        local_score = 0
+                        matched_value = ""
+
+
+                        # -------------------------------------------------
+                        # SCORE
+                        # -------------------------------------------------
+
+                        for value_text in values:
+
+                            if not value_text:
+                                continue
+
+
+                            candidate = (
+                                " ".join(
+                                    str(
+                                        value_text
+                                    )
+                                    .casefold()
+                                    .split()
+                                )
+                            )
+
+
+                            if not candidate:
+                                continue
+
+
+                            candidate_words = set(
+                                re.findall(
+                                    r"[a-z0-9]+",
+                                    candidate
+                                )
+                            )
+
+                            score = 0
+
+                            # Score the original target first, then
+                            # semantic aliases such as "docs".
+                            for candidate_index, target_candidate in enumerate(
+                                target_candidates
+                            ):
+
+                                words = target_word_sets.get(
+                                    target_candidate,
+                                    set()
+                                )
+
+                                if not words:
+                                    continue
+
+                                if candidate == target_candidate:
+
+                                    candidate_score = (
+                                        100
+                                        if candidate_index == 0
+                                        else 98
+                                    )
+
+                                elif all(
+                                    word in candidate_words
+                                    for word in words
+                                ):
+
+                                    candidate_score = (
+                                        95
+                                        if candidate_index == 0
+                                        else 93
+                                    )
+
+                                elif target_candidate in candidate:
+
+                                    candidate_score = (
+                                        90
+                                        if candidate_index == 0
+                                        else 88
+                                    )
+
+                                elif len(words) == 1 and any(
+                                    word in candidate_words
+                                    for word in words
+                                ):
+
+                                    candidate_score = 75
+
+                                else:
+
+                                    candidate_score = 0
+
+                                score = max(
+                                    score,
+                                    candidate_score
+                                )
+
+                            if score > local_score:
+
+                                local_score = score
+
+                                matched_value = (
+                                    value_text
+                                )
+
+
+                        # -------------------------------------------------
+                        # DOMAIN-AWARE DOCUMENTATION PREFERENCE
+                        # -------------------------------------------------
+
+                        if (
+                            normalized == "documentation page"
+                            and
+                            href
+                            and
+                            "docs.python.org" in href.casefold()
+                        ):
+                            score = max(score, 99)
+
+                        # -------------------------------------------------
+                        # SAVE BEST
+                        # -------------------------------------------------
+
+                        if (
+                            local_score >
+                            best_score
+                        ):
+
+                            try:
+
+                                tag = (
+                                    element
+                                    .evaluate(
+                                        "(el) => el.tagName"
+                                    )
+                                    .lower()
+                                )
+
+                            except Exception:
+
+                                tag = ""
+
+
+                            best_score = (
+                                local_score
+                            )
+
+                            best_candidate = (
+                                element
+                            )
+
+                            best_data = {
+
+                                "text":
+                                    visible_text
+                                    or
+                                    matched_value,
+
+                                "href":
+                                    href,
+
+                                "aria-label":
+                                    aria,
+
+                                "title":
+                                    title,
+
+                                "tag":
+                                    tag,
+
+                            }
+
+
+                    except Exception:
+
+                        continue
+
+
+            # =================================================
+            # CANDIDATE RESULT
+            # =================================================
+
+            print(
+                f"🎯 Best DOM score: "
+                f"{best_score}"
+            )
+
+
+            if (
+                best_candidate is not None
+                and
+                best_data is not None
+                and
+                best_score >= 70
+            ):
+
+                print(
+                    "✅ LIVE DOM TARGET RESOLVED"
+                )
+
+                print(
+                    f"   text : "
+                    f"{best_data['text']}"
+                )
+
+                print(
+                    f"   href : "
+                    f"{best_data['href']}"
+                )
+
+                print(
+                    f"   tag  : "
+                    f"{best_data['tag']}"
+                )
+
+
+                # -------------------------------------------------
+                # LINK
+                # -------------------------------------------------
+
+                if best_data["href"]:
+
+                    href = (
+                        best_data["href"]
+                    )
+
+
+                    try:
+
+                        href = urljoin(
+                            page.url,
+                            href
+                        )
+
+                    except Exception:
+                        pass
+
+
+                    return {
+
+                        "type": "link",
+
+                        "text":
+                            best_data["text"],
+
+                        "href":
+                            href,
+
+                        "aria-label":
+                            best_data["aria-label"],
+
+                        "title":
+                            best_data["title"],
+
+                    }
+
+
+                # -------------------------------------------------
+                # BUTTON
+                # -------------------------------------------------
+
+                if (
+                    best_data["tag"]
+                    ==
+                    "button"
+                ):
+
+                    return {
+
+                        "type": "button",
+
+                        "text":
+                            best_data["text"],
+
+                        "aria-label":
+                            best_data["aria-label"],
+
+                        "title":
+                            best_data["title"],
+
+                    }
+
+
+        # =====================================================
+        # SEARCH RESULT FALLBACK
         # =====================================================
 
         search_match = (
@@ -448,10 +937,15 @@ class TargetResolver:
 
         if search_match:
 
+            print(
+                "✅ Search-result fallback resolved"
+            )
+
             return search_match
 
+
         # =====================================================
-        # NO MATCH
+        # FAILURE
         # =====================================================
 
         print(

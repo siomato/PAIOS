@@ -1,4 +1,5 @@
 import re
+import hashlib
 
 
 class ActionPlanner:
@@ -16,21 +17,6 @@ class ActionPlanner:
 
         steps = []
 
-        # =================================================
-        # SPLIT MULTI-STEP COMMANDS
-        # =================================================
-        #
-        # Supports:
-        #
-        # search X then click Y
-        # search X and click Y
-        # search X and open Y
-        #
-        # IMPORTANT:
-        # We only split "and click/open" when it represents
-        # a new browser action.
-        # =================================================
-
         parts = self._split_commands(message)
 
         for part in parts:
@@ -40,18 +26,23 @@ class ActionPlanner:
             if not step:
                 continue
 
-            # -------------------------------------------------
-            # Remove optional leading "and"
-            # -------------------------------------------------
+            step = re.sub(
+                r"^[,;]+|[,;]+$",
+                "",
+                step
+            ).strip()
 
             if step.lower().startswith("and "):
-
                 step = step[4:].strip()
 
             if not step:
                 continue
 
-            lower_step = step.lower()
+            lower_step = re.sub(
+                r"[.!?]+$",
+                "",
+                step.lower()
+            ).strip()
 
             # =================================================
             # SEARCH
@@ -61,24 +52,28 @@ class ActionPlanner:
 
                 query = step[7:].strip()
 
-                # -------------------------------------------------
-                # Remove natural "for"
-                #
-                # Search for Python tutorials
-                #
-                # becomes:
-                #
-                # Python tutorials
-                # -------------------------------------------------
-
                 if query.lower().startswith("for "):
-
                     query = query[4:].strip()
 
                 if query:
-
                     steps.append({
                         "action": "search",
+                        "query": query
+                    })
+
+                continue
+
+            # =================================================
+            # FIND
+            # =================================================
+
+            if lower_step.startswith("find "):
+
+                query = step[5:].strip()
+
+                if query:
+                    steps.append({
+                        "action": "find",
                         "query": query
                     })
 
@@ -93,10 +88,7 @@ class ActionPlanner:
                 target = step[6:].strip()
 
                 if target:
-
-                    target = self._normalize_click_target(
-                        target
-                    )
+                    target = self._normalize_click_target(target)
 
                     steps.append({
                         "action": "click",
@@ -116,18 +108,19 @@ class ActionPlanner:
                 if not target:
                     continue
 
-                # -------------------------------------------------
-                # Open first result
-                # -------------------------------------------------
-
                 target_lower = target.lower()
 
                 if target_lower in (
                     "first result",
+                    "the first result",
                     "first search result",
+                    "the first search result",
                     "first search results",
+                    "the first search results",
                     "first useful result",
+                    "the first useful result",
                     "first useful results",
+                    "the first useful results",
                 ):
 
                     steps.append({
@@ -137,28 +130,17 @@ class ActionPlanner:
 
                     continue
 
-                # -------------------------------------------------
-                # Open URL
-                # -------------------------------------------------
+                url = self._resolve_website_url(target)
 
-                if (
-                    target.startswith("http://")
-                    or
-                    target.startswith("https://")
-                ):
+                if url:
 
                     steps.append({
                         "action": "open_url",
-                        "url": target
+                        "url": url
                     })
 
                 else:
 
-                    # Treat "open X" as a click target.
-                    #
-                    # This is safer for browser automation because
-                    # "open" normally means selecting something
-                    # already visible on the page.
                     steps.append({
                         "action": "click",
                         "target": target
@@ -167,7 +149,72 @@ class ActionPlanner:
                 continue
 
             # =================================================
-            # READ PAGE
+            # GO TO
+            # =================================================
+
+            if (
+                lower_step.startswith("go to ")
+                or
+                lower_step.startswith("goto ")
+            ):
+
+                if lower_step.startswith("go to "):
+                    target = step[6:].strip()
+                else:
+                    target = step[5:].strip()
+
+                if not target:
+                    continue
+
+                url = self._resolve_website_url(target)
+
+                if url:
+
+                    steps.append({
+                        "action": "open_url",
+                        "url": url
+                    })
+
+                else:
+
+                    steps.append({
+                        "action": "click",
+                        "target": target
+                    })
+
+                continue
+
+            # =================================================
+            # NAVIGATE TO
+            # =================================================
+
+            if lower_step.startswith("navigate to "):
+
+                target = step[12:].strip()
+
+                if not target:
+                    continue
+
+                url = self._resolve_website_url(target)
+
+                if url:
+
+                    steps.append({
+                        "action": "open_url",
+                        "url": url
+                    })
+
+                else:
+
+                    steps.append({
+                        "action": "click",
+                        "target": target
+                    })
+
+                continue
+
+            # =================================================
+            # READ
             # =================================================
 
             if lower_step in (
@@ -226,7 +273,199 @@ class ActionPlanner:
                 "command": step
             })
 
-        return steps
+        # =================================================
+        # PLAN METADATA
+        # =================================================
+
+        total_steps = len(steps)
+
+        plan_id = (
+            "plan-"
+            + hashlib.sha1(
+                message.encode("utf-8")
+            ).hexdigest()[:12]
+        )
+
+        normalized_steps = []
+
+        for index, action in enumerate(
+            steps,
+            start=1
+        ):
+
+            item = dict(action)
+
+            item["step_index"] = index
+            item["total_steps"] = total_steps
+            item["plan_id"] = plan_id
+
+            normalized_steps.append(item)
+
+        return normalized_steps
+
+    # =====================================================
+    # RESOLVE WEBSITE URL
+    # =====================================================
+
+    def _resolve_website_url(self, target: str):
+
+        if not target:
+            return None
+
+        value = target.strip()
+
+        value = re.sub(
+            r"^(the\s+)?website\s+",
+            "",
+            value,
+            flags=re.IGNORECASE
+        ).strip()
+
+        if re.match(
+            r"^https?://",
+            value,
+            flags=re.IGNORECASE
+        ):
+
+            return value
+
+        if value.lower().startswith("www."):
+
+            return "https://" + value
+
+        websites = {
+
+            "google":
+                "https://www.google.com",
+
+            "google.com":
+                "https://www.google.com",
+
+            "youtube":
+                "https://www.youtube.com",
+
+            "youtube.com":
+                "https://www.youtube.com",
+
+            "github":
+                "https://github.com",
+
+            "github.com":
+                "https://github.com",
+
+            "linkedin":
+                "https://www.linkedin.com",
+
+            "linkedin.com":
+                "https://www.linkedin.com",
+
+            "facebook":
+                "https://www.facebook.com",
+
+            "facebook.com":
+                "https://www.facebook.com",
+
+            "instagram":
+                "https://www.instagram.com",
+
+            "instagram.com":
+                "https://www.instagram.com",
+
+            "twitter":
+                "https://twitter.com",
+
+            "twitter.com":
+                "https://twitter.com",
+
+            "x":
+                "https://x.com",
+
+            "x.com":
+                "https://x.com",
+
+            "reddit":
+                "https://www.reddit.com",
+
+            "reddit.com":
+                "https://www.reddit.com",
+
+            "gmail":
+                "https://mail.google.com",
+
+            "gmail.com":
+                "https://mail.google.com",
+
+            "chatgpt":
+                "https://chatgpt.com",
+
+            "chat.openai.com":
+                "https://chat.openai.com",
+
+            "openai":
+                "https://openai.com",
+
+            "amazon":
+                "https://www.amazon.com",
+
+            "amazon.com":
+                "https://www.amazon.com",
+
+            "netflix":
+                "https://www.netflix.com",
+
+            "netflix.com":
+                "https://www.netflix.com",
+
+            "spotify":
+                "https://open.spotify.com",
+
+            "spotify.com":
+                "https://open.spotify.com",
+
+            "stackoverflow":
+                "https://stackoverflow.com",
+
+            "stackoverflow.com":
+                "https://stackoverflow.com",
+
+            "python":
+                "https://www.python.org",
+
+            "python.org":
+                "https://www.python.org",
+
+            "wikipedia":
+                "https://www.wikipedia.org",
+
+            "wikipedia.org":
+                "https://www.wikipedia.org",
+        }
+
+        normalized = value.lower().strip()
+
+        if normalized in websites:
+
+            return websites[normalized]
+
+        if re.match(
+            r"^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+$",
+            value
+        ):
+
+            return "https://" + value
+
+        cleaned = re.sub(
+            r"\s+website$",
+            "",
+            normalized,
+            flags=re.IGNORECASE
+        ).strip()
+
+        if cleaned in websites:
+
+            return websites[cleaned]
+
+        return None
 
     # =====================================================
     # SPLIT COMMANDS
@@ -234,16 +473,37 @@ class ActionPlanner:
 
     def _split_commands(self, message: str):
 
-        text = message.strip()
+        text = " ".join(
+            message.strip().split()
+        )
 
         if not text:
             return []
 
-        # =================================================
-        # FIRST:
-        # Split explicit "then"
-        # =================================================
+        # IMPORTANT:
+        # FIND is now a supported command.
+        command_start = (
+            r"(?:search|click|open|find|go\s+to|goto|"
+            r"navigate\s+to|read(?:\s+(?:the\s+)?)?page|"
+            r"read|fill|press)"
+        )
 
+        # Normalize comma/semicolon before commands.
+        text = re.sub(
+            rf"[,;]+\s+and\s+(?={command_start}\b)",
+            " and ",
+            text,
+            flags=re.IGNORECASE
+        )
+
+        text = re.sub(
+            rf"[,;]+\s*(?={command_start}\b)",
+            " and ",
+            text,
+            flags=re.IGNORECASE
+        )
+
+        # Explicit THEN.
         parts = re.split(
             r"\s+then\s+",
             text,
@@ -252,21 +512,6 @@ class ActionPlanner:
 
         final_parts = []
 
-        # =================================================
-        # SECOND:
-        # Split "and click" / "and open"
-        #
-        # Example:
-        #
-        # Search for Python tutorials and click
-        # THIS TARGET DOES NOT EXIST
-        #
-        # becomes:
-        #
-        # Search for Python tutorials
-        # click THIS TARGET DOES NOT EXIST
-        # =================================================
-
         for part in parts:
 
             part = part.strip()
@@ -274,63 +519,40 @@ class ActionPlanner:
             if not part:
                 continue
 
-            # -------------------------------------------------
-            # Search + click
-            # -------------------------------------------------
+            boundary = (
+                rf"\s+and\s+(?="
+                rf"{command_start}\b"
+                rf")"
+            )
 
-            match = re.match(
-                r"^(.*?)(?:\s+and\s+)(click)\s+(.+)$",
+            pieces = re.split(
+                boundary,
                 part,
                 flags=re.IGNORECASE
             )
 
-            if match:
+            for piece in pieces:
 
-                first_part = match.group(1).strip()
+                piece = piece.strip()
 
-                click_target = match.group(3).strip()
+                if not piece:
+                    continue
 
-                final_parts.append(
-                    first_part
-                )
+                piece = re.sub(
+                    r"^[,;]+|[,;]+$",
+                    "",
+                    piece
+                ).strip()
 
-                final_parts.append(
-                    f"click {click_target}"
-                )
+                piece = re.sub(
+                    r"^and\s+",
+                    "",
+                    piece,
+                    flags=re.IGNORECASE
+                ).strip()
 
-                continue
-
-            # -------------------------------------------------
-            # Search + open
-            # -------------------------------------------------
-
-            match = re.match(
-                r"^(.*?)(?:\s+and\s+)(open)\s+(.+)$",
-                part,
-                flags=re.IGNORECASE
-            )
-
-            if match:
-
-                first_part = match.group(1).strip()
-
-                open_target = match.group(3).strip()
-
-                final_parts.append(
-                    first_part
-                )
-
-                final_parts.append(
-                    f"open {open_target}"
-                )
-
-                continue
-
-            # -------------------------------------------------
-            # Normal command
-            # -------------------------------------------------
-
-            final_parts.append(part)
+                if piece:
+                    final_parts.append(piece)
 
         return final_parts
 
@@ -338,18 +560,26 @@ class ActionPlanner:
     # NORMALIZE CLICK TARGET
     # =====================================================
 
-    def _normalize_click_target(self, target: str):
+    def _normalize_click_target(
+        self,
+        target: str
+    ):
 
         normalized = target.strip()
 
         target_lower = normalized.lower()
 
         if target_lower in (
-            "first useful result",
             "first result",
+            "the first result",
             "first search result",
+            "the first search result",
             "first search results",
+            "the first search results",
+            "first useful result",
+            "the first useful result",
             "first useful results",
+            "the first useful results",
         ):
 
             return "first search result"

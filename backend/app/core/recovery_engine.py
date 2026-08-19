@@ -1,22 +1,34 @@
+# ============================================================
+# app/core/recovery_engine.py
+#
+# PAIOS RECOVERY ENGINE
+#
+# STEP 4
+# Real browser/session recovery
+# ============================================================
+
 from app.core.action_executor import action_executor
 from app.core.replanner import replanner
+
+from app.tools.browser_automation import browser_automation
+from app.tools.browser_worker import browser_worker
 
 import time
 
 
 class RecoveryEngine:
 
-    # =========================================================
+    # ========================================================
     # CONFIGURATION
-    # =========================================================
+    # ========================================================
 
     MAX_RETRIES = 2
     RETRY_DELAY = 1.0
-    MAX_REPLANS = 1
+    MAX_REPLANS = 2
 
-    # =========================================================
+    # ========================================================
     # INITIALIZATION
-    # =========================================================
+    # ========================================================
 
     def __init__(self):
 
@@ -24,33 +36,199 @@ class RecoveryEngine:
             "🛡️ RECOVERY ENGINE MODULE LOADED 🛡️"
         )
 
-    # =========================================================
-    # CLASSIFY ERROR
-    # =========================================================
+    # ========================================================
+    # STATE HELPERS
+    # ========================================================
+
+    def _set_state(
+        self,
+        state,
+        attribute,
+        value
+    ):
+
+        if state is None:
+            return
+
+        try:
+
+            setter = getattr(
+                state,
+                f"set_{attribute}",
+                None
+            )
+
+            if callable(setter):
+
+                setter(
+                    value
+                )
+
+                return
+
+        except Exception:
+            pass
+
+        try:
+
+            setattr(
+                state,
+                attribute,
+                value
+            )
+
+        except Exception:
+            pass
+
+    # ========================================================
+
+    def _increment_retries(
+        self,
+        state
+    ):
+
+        if state is None:
+            return
+
+        try:
+
+            current = getattr(
+                state,
+                "retries",
+                0
+            )
+
+            if isinstance(
+                current,
+                int
+            ):
+
+                setattr(
+                    state,
+                    "retries",
+                    current + 1
+                )
+
+        except Exception:
+            pass
+
+    # ========================================================
+
+    def _increment_replans(
+        self,
+        state
+    ):
+
+        if state is None:
+            return
+
+        try:
+
+            current = getattr(
+                state,
+                "replans",
+                0
+            )
+
+            if isinstance(
+                current,
+                int
+            ):
+
+                setattr(
+                    state,
+                    "replans",
+                    current + 1
+                )
+
+        except Exception:
+            pass
+
+    # ========================================================
+
+    def _set_current_step(
+        self,
+        state,
+        step
+    ):
+
+        self._set_state(
+            state,
+            "current_step",
+            step
+        )
+
+    # ========================================================
+
+    def _set_failed_step(
+        self,
+        state,
+        step
+    ):
+
+        self._set_state(
+            state,
+            "failed_step",
+            step
+        )
+
+    # ========================================================
+    # ERROR CLASSIFICATION
+    # ========================================================
 
     def _classify_error(
         self,
         result
     ):
 
-        error = (
-            result.get("error")
-            or ""
+        if not isinstance(
+            result,
+            dict
+        ):
+
+            return "unknown"
+
+        error = str(
+            result.get(
+                "error",
+                ""
+            )
         ).lower()
 
-        # -----------------------------------------------------
-        # Browser/session errors
-        # -----------------------------------------------------
+        # ----------------------------------------------------
+        # THREAD / PLAYWRIGHT ERRORS
+        # ----------------------------------------------------
 
         browser_errors = (
+
             "browser",
-            "page",
-            "context",
-            "target page",
-            "session",
-            "closed",
-            "connection",
+
             "playwright",
+
+            "page",
+
+            "context",
+
+            "target page",
+
+            "session",
+
+            "closed",
+
+            "connection",
+
+            "cannot switch to a different thread",
+
+            "different thread",
+
+            "thread",
+
+            "sync_api",
+
+            "event loop",
+
+            "greenlet",
+
         )
 
         if any(
@@ -60,17 +238,26 @@ class RecoveryEngine:
 
             return "browser"
 
-        # -----------------------------------------------------
-        # Target errors
-        # -----------------------------------------------------
+        # ----------------------------------------------------
+        # TARGET
+        # ----------------------------------------------------
 
         target_errors = (
+
             "target",
+
             "element",
+
             "locator",
+
             "resolve",
+
             "not found",
+
             "could not resolve",
+
+            "button not found",
+
         )
 
         if any(
@@ -80,26 +267,36 @@ class RecoveryEngine:
 
             return "target"
 
-        # -----------------------------------------------------
-        # Timeout
-        # -----------------------------------------------------
+        # ----------------------------------------------------
+        # TIMEOUT
+        # ----------------------------------------------------
 
         if (
             "timeout" in error
-            or "timed out" in error
+            or
+            "timed out" in error
         ):
 
             return "timeout"
 
-        # -----------------------------------------------------
-        # Network
-        # -----------------------------------------------------
+        # ----------------------------------------------------
+        # NETWORK
+        # ----------------------------------------------------
 
         network_errors = (
+
             "network",
-            "connection",
+
             "navigation",
+
             "net::",
+
+            "dns",
+
+            "connection refused",
+
+            "connection reset",
+
         )
 
         if any(
@@ -109,20 +306,34 @@ class RecoveryEngine:
 
             return "network"
 
-        # -----------------------------------------------------
-        # Unknown
-        # -----------------------------------------------------
+        # ----------------------------------------------------
+        # UNKNOWN ACTION
+        # ----------------------------------------------------
+
+        if "unknown action" in error or "unsupported action" in error:
+            return "action"
+
+        # ----------------------------------------------------
+        # UNKNOWN
+        # ----------------------------------------------------
 
         return "unknown"
 
-    # =========================================================
+    # ========================================================
     # RECOVERABILITY
-    # =========================================================
+    # ========================================================
 
     def _is_recoverable(
         self,
         result
     ):
+
+        if not isinstance(
+            result,
+            dict
+        ):
+
+            return True
 
         if result.get(
             "status"
@@ -138,21 +349,86 @@ class RecoveryEngine:
 
         return True
 
-    # =========================================================
-    # WAIT
-    # =========================================================
+    # ========================================================
+    # REAL BROWSER RESET
+    # ========================================================
 
-    def _wait(
-        self
-    ):
+    def _reset_browser(self):
 
-        time.sleep(
-            self.RETRY_DELAY
+        print(
+            "\n======================================"
         )
 
-    # =========================================================
+        print(
+            "♻️ RESETTING PLAYWRIGHT SESSION"
+        )
+
+        print(
+            "======================================"
+        )
+
+        try:
+
+            # ------------------------------------------------
+            # IMPORTANT:
+            #
+            # BrowserAutomation owns Playwright objects.
+            #
+            # Therefore cleanup itself is executed through
+            # BrowserWorker.
+            # ------------------------------------------------
+
+            result = browser_worker.execute(
+                browser_automation.close
+            )
+
+            print(
+                f"🧹 Browser cleanup result: {result}"
+            )
+
+            print(
+                "✅ Stale browser session removed."
+            )
+
+            return True
+
+        except Exception as e:
+
+            print(
+                f"⚠️ Browser cleanup failed: {e}"
+            )
+
+            # ------------------------------------------------
+            # Emergency cleanup.
+            #
+            # This should normally never be required.
+            # ------------------------------------------------
+
+            try:
+
+                browser_automation._cleanup()
+
+                print(
+                    "🧹 Emergency browser cleanup completed."
+                )
+
+                return True
+
+            except Exception as cleanup_error:
+
+                print(
+                    "❌ Emergency cleanup failed:"
+                )
+
+                print(
+                    cleanup_error
+                )
+
+                return False
+
+    # ========================================================
     # PREPARE RECOVERY
-    # =========================================================
+    # ========================================================
 
     def _prepare_recovery(
         self,
@@ -168,9 +444,9 @@ class RecoveryEngine:
             f"Recovery type: {error_type}"
         )
 
-        # -----------------------------------------------------
-        # Browser/session
-        # -----------------------------------------------------
+        # ====================================================
+        # BROWSER / PLAYWRIGHT
+        # ====================================================
 
         if error_type == "browser":
 
@@ -178,11 +454,31 @@ class RecoveryEngine:
                 "🌐 Browser/session issue detected."
             )
 
+            print(
+                "♻️ Destroying stale Playwright session..."
+            )
+
+            reset_success = (
+                self._reset_browser()
+            )
+
+            if not reset_success:
+
+                print(
+                    "❌ Browser reset failed."
+                )
+
+                return False
+
+            print(
+                "✅ Browser reset completed."
+            )
+
             return True
 
-        # -----------------------------------------------------
-        # Target
-        # -----------------------------------------------------
+        # ====================================================
+        # TARGET
+        # ====================================================
 
         if error_type == "target":
 
@@ -192,9 +488,9 @@ class RecoveryEngine:
 
             return True
 
-        # -----------------------------------------------------
-        # Timeout
-        # -----------------------------------------------------
+        # ====================================================
+        # TIMEOUT
+        # ====================================================
 
         if error_type == "timeout":
 
@@ -204,9 +500,9 @@ class RecoveryEngine:
 
             return True
 
-        # -----------------------------------------------------
-        # Network
-        # -----------------------------------------------------
+        # ====================================================
+        # NETWORK
+        # ====================================================
 
         if error_type == "network":
 
@@ -216,29 +512,57 @@ class RecoveryEngine:
 
             return True
 
-        # -----------------------------------------------------
-        # Unknown
-        # -----------------------------------------------------
+        # ====================================================
+        # ACTION
+        # ====================================================
+
+        if error_type == "action":
+
+            print(
+                "🧩 Invalid/unknown action detected; "
+                "delegating to Replanner."
+            )
+
+            return True
+
+        # ====================================================
+        # UNKNOWN
+        # ====================================================
 
         print(
-            "❓ Unknown failure type."
+            "❓ Unknown failure type; allowing Replanner "
+            "to determine an alternative."
         )
 
         return True
 
-    # =========================================================
+    # ========================================================
+    # WAIT
+    # ========================================================
+
+    def _wait(self):
+
+        time.sleep(
+            self.RETRY_DELAY
+        )
+
+    # ========================================================
     # EXECUTE ONE ACTION WITH RETRIES
-    # =========================================================
+    # ========================================================
 
     def execute_action(
         self,
         action,
-        max_retries=None
+        max_retries=None,
+        state=None,
+        step_number=None
     ):
 
         if max_retries is None:
 
-            max_retries = self.MAX_RETRIES
+            max_retries = (
+                self.MAX_RETRIES
+            )
 
         print(
             "\n========== RECOVERY EXECUTOR =========="
@@ -254,9 +578,20 @@ class RecoveryEngine:
 
         last_result = None
 
-        # =====================================================
-        # FIRST EXECUTION + RETRIES
-        # =====================================================
+        # ====================================================
+        # CURRENT STEP
+        # ====================================================
+
+        if step_number is not None:
+
+            self._set_current_step(
+                state,
+                step_number
+            )
+
+        # ====================================================
+        # ATTEMPT LOOP
+        # ====================================================
 
         while attempts <= max_retries:
 
@@ -267,11 +602,39 @@ class RecoveryEngine:
                 f"{attempts}/{max_retries + 1}"
             )
 
+            # ------------------------------------------------
+            # EXECUTE ACTION
+            # ------------------------------------------------
+
             try:
 
-                result = action_executor.execute_action(
-                    action
+                result = (
+                    action_executor.execute_action(
+                        action,
+                        state=state
+                    )
                 )
+
+            except TypeError:
+
+                # Compatibility with older executor
+
+                try:
+
+                    result = (
+                        action_executor.execute_action(
+                            action
+                        )
+                    )
+
+                except Exception as e:
+
+                    result = {
+                        "status": "failed",
+                        "action": action,
+                        "error": str(e),
+                        "recoverable": True
+                    }
 
             except Exception as e:
 
@@ -282,11 +645,27 @@ class RecoveryEngine:
                     "recoverable": True
                 }
 
+            # ------------------------------------------------
+            # Safety normalization
+            # ------------------------------------------------
+
+            if not isinstance(
+                result,
+                dict
+            ):
+
+                result = {
+                    "status": "failed",
+                    "action": action,
+                    "error": str(result),
+                    "recoverable": True
+                }
+
             last_result = result
 
-            # -------------------------------------------------
+            # =================================================
             # SUCCESS
-            # -------------------------------------------------
+            # =================================================
 
             if result.get(
                 "status"
@@ -299,28 +678,50 @@ class RecoveryEngine:
 
                 return {
                     "status": "success",
+
                     "action": action,
+
                     "attempts": attempts,
-                    "recovered": attempts > 1,
-                    "recovery_history": recovery_history,
-                    "result": result,
+
+                    "recovered":
+                        attempts > 1,
+
+                    "recovery_history":
+                        recovery_history,
+
+                    "result":
+                        result,
+
                     "error": None
                 }
 
-            # -------------------------------------------------
+            # =================================================
             # FAILURE
-            # -------------------------------------------------
+            # =================================================
 
-            error_type = self._classify_error(
-                result
+            error_type = (
+                self._classify_error(
+                    result
+                )
+            )
+
+            error_message = (
+                result.get(
+                    "error"
+                )
             )
 
             recovery_history.append({
-                "attempt": attempts,
-                "error": result.get(
-                    "error"
-                ),
-                "error_type": error_type
+
+                "attempt":
+                    attempts,
+
+                "error":
+                    error_message,
+
+                "error_type":
+                    error_type
+
             })
 
             print(
@@ -332,13 +733,25 @@ class RecoveryEngine:
             )
 
             print(
-                f"Reason: "
-                f"{result.get('error')}"
+                f"Reason: {error_message}"
             )
 
-            # -------------------------------------------------
+            # ------------------------------------------------
+            # STATE
+            # ------------------------------------------------
+
+            self._increment_retries(
+                state
+            )
+
+            self._set_failed_step(
+                state,
+                step_number
+            )
+
+            # =================================================
             # NON-RECOVERABLE
-            # -------------------------------------------------
+            # =================================================
 
             if not self._is_recoverable(
                 result
@@ -351,31 +764,40 @@ class RecoveryEngine:
 
                 return {
                     "status": "failed",
+
                     "action": action,
+
                     "attempts": attempts,
+
                     "recovered": False,
-                    "recovery_history": recovery_history,
-                    "result": result,
-                    "error": result.get(
-                        "error"
-                    )
+
+                    "recovery_history":
+                        recovery_history,
+
+                    "result":
+                        result,
+
+                    "error":
+                        error_message
                 }
 
-            # -------------------------------------------------
+            # =================================================
             # RETRY LIMIT
-            # -------------------------------------------------
+            # =================================================
 
             if attempts > max_retries:
 
                 break
 
-            # -------------------------------------------------
-            # PREPARE
-            # -------------------------------------------------
+            # =================================================
+            # PREPARE RECOVERY
+            # =================================================
 
-            prepared = self._prepare_recovery(
-                action,
-                error_type
+            prepared = (
+                self._prepare_recovery(
+                    action,
+                    error_type
+                )
             )
 
             if not prepared:
@@ -386,9 +808,9 @@ class RecoveryEngine:
 
                 break
 
-            # -------------------------------------------------
+            # =================================================
             # WAIT
-            # -------------------------------------------------
+            # =================================================
 
             print(
                 f"⏳ Waiting "
@@ -398,9 +820,9 @@ class RecoveryEngine:
 
             self._wait()
 
-        # =====================================================
+        # ====================================================
         # FINAL FAILURE
-        # =====================================================
+        # ====================================================
 
         print(
             "\n❌ Recovery failed."
@@ -411,22 +833,35 @@ class RecoveryEngine:
         )
 
         return {
+
             "status": "failed",
+
             "action": action,
+
             "attempts": attempts,
+
             "recovered": False,
-            "recovery_history": recovery_history,
-            "result": last_result,
-            "error": (
-                last_result.get("error")
-                if last_result
-                else "Unknown error"
-            )
+
+            "recovery_history":
+                recovery_history,
+
+            "result":
+                last_result,
+
+            "error":
+                (
+                    last_result.get(
+                        "error"
+                    )
+                    if last_result
+                    else
+                    "Unknown error"
+                )
         }
 
-    # =========================================================
-    # REPLAN FAILED PLAN
-    # =========================================================
+    # ========================================================
+    # REPLAN
+    # ========================================================
 
     def _replan(
         self,
@@ -457,10 +892,12 @@ class RecoveryEngine:
 
         try:
 
-            replan_result = replanner.replan(
-                original_steps,
-                failed_step,
-                failure
+            replan_result = (
+                replanner.replan(
+                    original_steps,
+                    failed_step,
+                    failure
+                )
             )
 
         except Exception as e:
@@ -482,7 +919,8 @@ class RecoveryEngine:
 
             return {
                 "status": "failed",
-                "error": "Invalid replanner response.",
+                "error":
+                    "Invalid replanner response.",
                 "steps": []
             }
 
@@ -490,33 +928,29 @@ class RecoveryEngine:
             "status"
         ) != "success":
 
-            print(
-                "❌ Replanner failed."
-            )
-
             return {
                 "status": "failed",
-                "error": replan_result.get(
-                    "error",
-                    "Replanner failed."
-                ),
+                "error":
+                    replan_result.get(
+                        "error",
+                        "Replanner failed."
+                    ),
                 "steps": []
             }
 
-        new_steps = replan_result.get(
-            "steps",
-            []
+        new_steps = (
+            replan_result.get(
+                "steps",
+                []
+            )
         )
 
         if not new_steps:
 
-            print(
-                "❌ Replanner returned no steps."
-            )
-
             return {
                 "status": "failed",
-                "error": "Replanner generated no steps.",
+                "error":
+                    "Replanner generated no steps.",
                 "steps": []
             }
 
@@ -543,23 +977,30 @@ class RecoveryEngine:
             )
 
         return {
+
             "status": "success",
-            "reason": replan_result.get(
-                "reason"
-            ),
-            "steps": new_steps,
-            "failed_step": failed_step
+
+            "reason":
+                replan_result.get(
+                    "reason"
+                ),
+
+            "steps":
+                new_steps,
+
+            "failed_step":
+                failed_step
         }
 
-    # =========================================================
-    # EXECUTE COMPLETE PLAN WITH
-    # RETRY + REPLANNING
-    # =========================================================
+    # ========================================================
+    # EXECUTE COMPLETE PLAN
+    # ========================================================
 
     def execute(
         self,
         steps,
-        max_retries=None
+        max_retries=None,
+        state=None
     ):
 
         print(
@@ -574,20 +1015,52 @@ class RecoveryEngine:
             "======================================"
         )
 
+        # ====================================================
+        # VALIDATE PLAN
+        # ====================================================
+
         if not steps:
 
+            self._set_state(
+                state,
+                "status",
+                "failed"
+            )
+
             return {
+
                 "status": "failed",
+
                 "steps": [],
+
                 "failed_step": None,
-                "error": "No actions to execute.",
+
+                "error":
+                    "No actions to execute.",
+
                 "replans_used": 0,
+
                 "replan_history": []
             }
 
-        # -----------------------------------------------------
-        # Keep original plan
-        # -----------------------------------------------------
+        # ====================================================
+        # INITIAL STATE
+        # ====================================================
+
+        self._set_state(
+            state,
+            "status",
+            "executing"
+        )
+
+        self._set_current_step(
+            state,
+            0
+        )
+
+        # ====================================================
+        # PLAN COPIES
+        # ====================================================
 
         original_steps = list(
             steps
@@ -603,9 +1076,9 @@ class RecoveryEngine:
 
         replan_history = []
 
-        # =====================================================
-        # PLAN EXECUTION LOOP
-        # =====================================================
+        # ====================================================
+        # PLAN LOOP
+        # ====================================================
 
         while True:
 
@@ -620,11 +1093,11 @@ class RecoveryEngine:
                 f"{total_steps} steps."
             )
 
-            # =================================================
-            # EXECUTE EACH STEP
-            # =================================================
-
             plan_failed = False
+
+            # =================================================
+            # STEP LOOP
+            # =================================================
 
             for index, action in enumerate(
                 current_steps,
@@ -641,18 +1114,36 @@ class RecoveryEngine:
                     f"Action: {action}"
                 )
 
-                result = self.execute_action(
-                    action,
-                    max_retries=max_retries
+                self._set_current_step(
+                    state,
+                    index
+                )
+
+                result = (
+                    self.execute_action(
+                        action,
+                        max_retries=max_retries,
+                        state=state,
+                        step_number=index
+                    )
                 )
 
                 results.append({
-                    "step": index,
-                    "action": action,
-                    "status": result.get(
-                        "status"
-                    ),
-                    "result": result
+
+                    "step":
+                        index,
+
+                    "action":
+                        action,
+
+                    "status":
+                        result.get(
+                            "status"
+                        ),
+
+                    "result":
+                        result
+
                 })
 
                 # ---------------------------------------------
@@ -693,16 +1184,21 @@ class RecoveryEngine:
 
                 failed_step = index
 
-                failure = result.get(
-                    "error"
+                failure = (
+                    result.get(
+                        "error"
+                    )
                 )
 
-                failed_result = result
+                self._set_failed_step(
+                    state,
+                    failed_step
+                )
 
                 break
 
             # =================================================
-            # ENTIRE PLAN SUCCESS
+            # COMPLETE SUCCESS
             # =================================================
 
             if not plan_failed:
@@ -711,36 +1207,82 @@ class RecoveryEngine:
                     "\n🎉 ALL STEPS COMPLETED."
                 )
 
+                self._set_state(
+                    state,
+                    "status",
+                    "completed"
+                )
+
+                self._set_failed_step(
+                    state,
+                    None
+                )
+
                 return {
-                    "status": "success",
-                    "steps": results,
-                    "failed_step": None,
-                    "error": None,
-                    "replans_used": replans_used,
-                    "replan_history": replan_history
+
+                    "status":
+                        "success",
+
+                    "steps":
+                        results,
+
+                    "failed_step":
+                        None,
+
+                    "error":
+                        None,
+
+                    "replans_used":
+                        replans_used,
+
+                    "replan_history":
+                        replan_history
                 }
 
             # =================================================
             # REPLAN LIMIT
             # =================================================
 
-            if replans_used >= self.MAX_REPLANS:
+            if (
+                replans_used
+                >=
+                self.MAX_REPLANS
+            ):
 
                 print(
-                    "\n🛑 Maximum replanning attempts reached."
+                    "\n🛑 Maximum replanning "
+                    "attempts reached."
+                )
+
+                self._set_state(
+                    state,
+                    "status",
+                    "failed"
                 )
 
                 return {
-                    "status": "failed",
-                    "steps": results,
-                    "failed_step": failed_step,
-                    "error": failure,
-                    "replans_used": replans_used,
-                    "replan_history": replan_history
+
+                    "status":
+                        "failed",
+
+                    "steps":
+                        results,
+
+                    "failed_step":
+                        failed_step,
+
+                    "error":
+                        failure,
+
+                    "replans_used":
+                        replans_used,
+
+                    "replan_history":
+                        replan_history
                 }
 
             # =================================================
-            # CALL REPLANNER
+            # REPLAN
             # =================================================
 
             print(
@@ -751,21 +1293,32 @@ class RecoveryEngine:
                 "🧠 Sending failure to Replanner..."
             )
 
-            replan_result = self._replan(
-                original_steps,
-                failed_step,
-                failure
+            replan_result = (
+                self._replan(
+                    original_steps,
+                    failed_step,
+                    failure
+                )
             )
 
             replan_history.append({
-                "replan_attempt": replans_used + 1,
-                "failed_step": failed_step,
-                "failure": failure,
-                "result": replan_result
+
+                "replan_attempt":
+                    replans_used + 1,
+
+                "failed_step":
+                    failed_step,
+
+                "failure":
+                    failure,
+
+                "result":
+                    replan_result
+
             })
 
             # =================================================
-            # REPLAN FAILED
+            # REPLAN FAILURE
             # =================================================
 
             if replan_result.get(
@@ -776,22 +1329,44 @@ class RecoveryEngine:
                     "\n❌ Replanning failed."
                 )
 
+                self._set_state(
+                    state,
+                    "status",
+                    "failed"
+                )
+
                 return {
-                    "status": "failed",
-                    "steps": results,
-                    "failed_step": failed_step,
-                    "error": replan_result.get(
-                        "error"
-                    ),
-                    "replans_used": replans_used,
-                    "replan_history": replan_history
+
+                    "status":
+                        "failed",
+
+                    "steps":
+                        results,
+
+                    "failed_step":
+                        failed_step,
+
+                    "error":
+                        replan_result.get(
+                            "error"
+                        ),
+
+                    "replans_used":
+                        replans_used,
+
+                    "replan_history":
+                        replan_history
                 }
 
             # =================================================
-            # USE NEW PLAN
+            # ACCEPT NEW PLAN
             # =================================================
 
             replans_used += 1
+
+            self._increment_replans(
+                state
+            )
 
             current_steps = list(
                 replan_result.get(
@@ -802,13 +1377,32 @@ class RecoveryEngine:
 
             if not current_steps:
 
+                self._set_state(
+                    state,
+                    "status",
+                    "failed"
+                )
+
                 return {
-                    "status": "failed",
-                    "steps": results,
-                    "failed_step": failed_step,
-                    "error": "Replanner returned empty plan.",
-                    "replans_used": replans_used,
-                    "replan_history": replan_history
+
+                    "status":
+                        "failed",
+
+                    "steps":
+                        results,
+
+                    "failed_step":
+                        failed_step,
+
+                    "error":
+                        "Replanner returned "
+                        "empty plan.",
+
+                    "replans_used":
+                        replans_used,
+
+                    "replan_history":
+                        replan_history
                 }
 
             print(
@@ -817,16 +1411,28 @@ class RecoveryEngine:
 
             print(
                 f"Replans used: "
-                f"{replans_used}/{self.MAX_REPLANS}"
+                f"{replans_used}/"
+                f"{self.MAX_REPLANS}"
             )
 
-            # -------------------------------------------------
-            # Loop back and execute new plan
-            # -------------------------------------------------
+            self._set_current_step(
+                state,
+                0
+            )
+
+            self._set_state(
+                state,
+                "status",
+                "executing"
+            )
+
+            # ------------------------------------------------
+            # Continue with new plan
+            # ------------------------------------------------
 
 
-# =============================================================
+# ============================================================
 # GLOBAL INSTANCE
-# =============================================================
+# ============================================================
 
 recovery_engine = RecoveryEngine()
