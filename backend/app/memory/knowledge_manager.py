@@ -13,29 +13,51 @@ class KnowledgeManager:
         # D:\PAIOS\backend\knowledge
         self.knowledge_path = BASE_DIR / "knowledge"
 
-        # Create the folder if it doesn't exist
-        self.knowledge_path.mkdir(exist_ok=True)
+        self.knowledge_path.mkdir(
+            exist_ok=True
+        )
 
-        self.profile_file = self.knowledge_path / "profile.json"
-        self.preferences_file = self.knowledge_path / "preferences.json"
-        self.projects_file = self.knowledge_path / "projects.json"
-        self.tasks_file = self.knowledge_path / "tasks.json"
+        self.profile_file = (
+            self.knowledge_path / "profile.json"
+        )
 
-    # -------------------------
-    # Generic Helpers
-    # -------------------------
+        self.preferences_file = (
+            self.knowledge_path / "preferences.json"
+        )
 
-    def load_json(self, file_path):
+        self.projects_file = (
+            self.knowledge_path / "projects.json"
+        )
+
+        self.tasks_file = (
+            self.knowledge_path / "tasks.json"
+        )
+
+    # =================================================
+    # GENERIC HELPERS
+    # =================================================
+
+    def load_json(
+        self,
+        file_path
+    ):
 
         if not file_path.exists():
 
             if file_path.name == "projects.json":
-                data = {"projects": []}
+
+                data = {
+                    "projects": []
+                }
 
             elif file_path.name == "tasks.json":
-                data = {"tasks": []}
+
+                data = {
+                    "tasks": []
+                }
 
             else:
+
                 data = {}
 
             self.save_json(
@@ -71,9 +93,9 @@ class KnowledgeManager:
                 indent=4
             )
 
-    # -------------------------
-    # Profile
-    # -------------------------
+    # =================================================
+    # PROFILE
+    # =================================================
 
     def save_name(
         self,
@@ -101,9 +123,9 @@ class KnowledgeManager:
             "name"
         )
 
-    # -------------------------
-    # Projects
-    # -------------------------
+    # =================================================
+    # PROJECTS
+    # =================================================
 
     def add_project(
         self,
@@ -143,9 +165,9 @@ class KnowledgeManager:
             []
         )
 
-    # -------------------------
-    # Preferences
-    # -------------------------
+    # =================================================
+    # PREFERENCES
+    # =================================================
 
     def save_preference(
         self,
@@ -177,9 +199,165 @@ class KnowledgeManager:
             key
         )
 
-    # -------------------------
-    # Task Memory
-    # -------------------------
+    # =================================================
+    # TASK NORMALIZATION
+    # =================================================
+
+    def _normalize_task(
+        self,
+        task
+    ):
+
+        if not isinstance(
+            task,
+            str
+        ):
+
+            return set()
+
+        stop_words = {
+
+            "the",
+            "and",
+            "for",
+            "with",
+            "from",
+            "this",
+            "that",
+            "what",
+            "did",
+            "was",
+            "were",
+            "have",
+            "has",
+            "had",
+            "you",
+            "our",
+            "your",
+            "about",
+            "into",
+            "using",
+            "use",
+            "can",
+            "could",
+            "would",
+            "should",
+            "tell",
+            "me",
+            "please",
+            "open",
+            "find",
+            "search",
+            "web",
+            "page",
+            "pages",
+            "result",
+            "results"
+        }
+
+        tokens = set()
+
+        for token in task.lower().split():
+
+            token = token.strip(
+                ".,!?;:()[]{}\"'"
+            )
+
+            if len(token) <= 2:
+                continue
+
+            if token in stop_words:
+                continue
+
+            tokens.add(
+                token
+            )
+
+        return tokens
+
+    # =================================================
+    # DUPLICATE DETECTION
+    # =================================================
+
+    def _find_duplicate_task(
+        self,
+        task,
+        tasks
+    ):
+
+        new_tokens = (
+            self._normalize_task(
+                task
+            )
+        )
+
+        if not new_tokens:
+
+            return None
+
+        best_match = None
+        best_score = 0.0
+
+        for existing in tasks:
+
+            if not isinstance(
+                existing,
+                dict
+            ):
+
+                continue
+
+            existing_task = existing.get(
+                "task",
+                ""
+            )
+
+            existing_tokens = (
+                self._normalize_task(
+                    existing_task
+                )
+            )
+
+            if not existing_tokens:
+                continue
+
+            intersection = (
+                new_tokens
+                & existing_tokens
+            )
+
+            if not intersection:
+                continue
+
+            # Jaccard similarity.
+            union = (
+                new_tokens
+                | existing_tokens
+            )
+
+            score = (
+                len(intersection)
+                / len(union)
+            )
+
+            if score > best_score:
+
+                best_score = score
+                best_match = existing
+
+        # Conservative threshold.
+        #
+        # This prevents loosely related tasks from
+        # being merged together.
+        if best_score >= 0.60:
+
+            return best_match
+
+        return None
+
+    # =================================================
+    # TASK MEMORY
+    # =================================================
 
     def add_task(
         self,
@@ -215,6 +393,60 @@ class KnowledgeManager:
             []
         )
 
+        now = datetime.now(
+            timezone.utc
+        ).isoformat()
+
+        # ---------------------------------------------
+        # Check for near-duplicate
+        # ---------------------------------------------
+
+        duplicate = (
+            self._find_duplicate_task(
+                task,
+                tasks
+            )
+        )
+
+        if duplicate is not None:
+
+            duplicate["task"] = task
+
+            duplicate["status"] = status
+
+            duplicate["steps"] = int(
+                steps
+            )
+
+            duplicate["replans_used"] = int(
+                replans_used
+            )
+
+            duplicate["timestamp"] = now
+
+            duplicate["occurrences"] = (
+                int(
+                    duplicate.get(
+                        "occurrences",
+                        1
+                    )
+                )
+                + 1
+            )
+
+            data["tasks"] = tasks
+
+            self.save_json(
+                self.tasks_file,
+                data
+            )
+
+            return duplicate
+
+        # ---------------------------------------------
+        # New task
+        # ---------------------------------------------
+
         record = {
 
             "task": task,
@@ -229,10 +461,9 @@ class KnowledgeManager:
                 replans_used
             ),
 
-            "timestamp":
-                datetime.now(
-                    timezone.utc
-                ).isoformat()
+            "timestamp": now,
+
+            "occurrences": 1
         }
 
         tasks.append(
@@ -259,27 +490,15 @@ class KnowledgeManager:
             []
         )
 
-    # -------------------------
-    # Task Retrieval
-    # -------------------------
+    # =================================================
+    # TASK RETRIEVAL
+    # =================================================
 
     def find_tasks(
         self,
         query,
         limit=5
     ):
-
-        """
-        Retrieve previous tasks using deterministic
-        token-overlap relevance scoring.
-
-        The original substring behavior is preserved
-        for exact phrases, while broader queries can
-        now match individual meaningful words.
-
-        Returns tasks ordered from most relevant to
-        least relevant.
-        """
 
         if not isinstance(
             query,
@@ -293,10 +512,6 @@ class KnowledgeManager:
         if not query:
 
             return []
-
-        # ---------------------------------------------
-        # Common words with little retrieval value
-        # ---------------------------------------------
 
         stop_words = {
 
@@ -333,10 +548,6 @@ class KnowledgeManager:
             "successfully"
         }
 
-        # ---------------------------------------------
-        # Tokenize query
-        # ---------------------------------------------
-
         query_tokens = {
 
             token.strip(
@@ -360,10 +571,6 @@ class KnowledgeManager:
 
         scored_tasks = []
 
-        # ---------------------------------------------
-        # Evaluate every stored task
-        # ---------------------------------------------
-
         for task in self.get_tasks():
 
             if not isinstance(
@@ -381,12 +588,7 @@ class KnowledgeManager:
             ).strip().lower()
 
             if not task_text:
-
                 continue
-
-            # -----------------------------------------
-            # Tokenize stored task
-            # -----------------------------------------
 
             task_tokens = {
 
@@ -406,12 +608,7 @@ class KnowledgeManager:
             task_tokens -= stop_words
 
             if not task_tokens:
-
                 continue
-
-            # -----------------------------------------
-            # Calculate token overlap
-            # -----------------------------------------
 
             matched_tokens = (
                 query_tokens
@@ -419,7 +616,6 @@ class KnowledgeManager:
             )
 
             if not matched_tokens:
-
                 continue
 
             score = (
@@ -427,27 +623,15 @@ class KnowledgeManager:
                 / len(query_tokens)
             )
 
-            # -----------------------------------------
-            # Exact phrase bonus
-            # -----------------------------------------
-
             if query in task_text:
 
                 score += 0.50
-
-            # -----------------------------------------
-            # Single-token query bonus
-            # -----------------------------------------
 
             if len(
                 query_tokens
             ) == 1:
 
                 score += 0.25
-
-            # -----------------------------------------
-            # Store score internally
-            # -----------------------------------------
 
             scored_tasks.append(
                 (
@@ -456,18 +640,10 @@ class KnowledgeManager:
                 )
             )
 
-        # ---------------------------------------------
-        # Highest relevance first
-        # ---------------------------------------------
-
         scored_tasks.sort(
             key=lambda item: item[0],
             reverse=True
         )
-
-        # ---------------------------------------------
-        # Return only tasks
-        # ---------------------------------------------
 
         return [
 
