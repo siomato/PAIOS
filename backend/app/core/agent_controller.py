@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 # app/core/agent_controller.py
 #
 # PAIOS AGENT CONTROLLER
@@ -1287,6 +1287,12 @@ class AgentController:
             }
 
         # ====================================================
+        # TASK LIFECYCLE — RUNNING
+
+        self._mark_task_running(
+            user_message
+        )
+
         # INITIAL STATUS
         # ====================================================
 
@@ -1715,37 +1721,21 @@ class AgentController:
                     )
 
                     # ---------------------------------------------
-                    # TASK MEMORY
+                    # TASK LIFECYCLE MEMORY
                     # ---------------------------------------------
-                    # Store one task-level outcome only after the
-                    # controller has confirmed every planned step.
-                    # Browser actions themselves are not persisted
-                    # as long-term memory.
-                    try:
-
-                        self.knowledge.add_task(
-                            task=user_message,
-                            status="completed",
-                            steps=total_steps,
-                            replans_used=getattr(
-                                state,
-                                "replans_used",
-                                0
-                            )
+                    # The task was marked RUNNING when execution
+                    # started. Update that same task record to
+                    # COMPLETED instead of creating a duplicate.
+                    self._mark_task_status(
+                        user_message,
+                        "completed",
+                        steps=total_steps,
+                        replans_used=getattr(
+                            state,
+                            "replans_used",
+                            0
                         )
-
-                        print(
-                            "🧠 Task outcome saved to memory."
-                        )
-
-                    except Exception as memory_error:
-
-                        # Memory must never break an otherwise
-                        # successful autonomous task.
-                        print(
-                            "⚠️ Task memory save failed: "
-                            f"{memory_error}"
-                        )
+                    )
 
                     self._emit_event(
                         event_callback,
