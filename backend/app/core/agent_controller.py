@@ -1237,6 +1237,63 @@ class AgentController:
             )
 
     # ========================================================
+    # TASK LIFECYCLE MEMORY
+    # ========================================================
+
+    def _mark_task_running(
+        self,
+        user_message
+    ):
+
+        try:
+
+            self.knowledge.start_task(
+                user_message
+            )
+
+            print(
+                "🧠 Task lifecycle → RUNNING"
+            )
+
+        except Exception as e:
+
+            # Memory must never break execution.
+            print(
+                "⚠️ Could not mark task RUNNING: "
+                f"{e}"
+            )
+
+    def _mark_task_status(
+        self,
+        user_message,
+        status,
+        steps=0,
+        replans_used=0
+    ):
+
+        try:
+
+            self.knowledge.update_task_status(
+                task=user_message,
+                status=status,
+                steps=steps,
+                replans_used=replans_used
+            )
+
+            print(
+                "🧠 Task lifecycle → "
+                f"{status.upper()}"
+            )
+
+        except Exception as e:
+
+            # Memory must never break execution.
+            print(
+                "⚠️ Could not update task lifecycle "
+                f"to {status}: {e}"
+            )
+
+    # ========================================================
     # RUN AUTONOMOUS TASK
     # ========================================================
 
