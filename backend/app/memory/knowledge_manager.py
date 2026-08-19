@@ -319,6 +319,7 @@ class KnowledgeManager:
             )
 
             if not existing_tokens:
+
                 continue
 
             intersection = (
@@ -327,9 +328,10 @@ class KnowledgeManager:
             )
 
             if not intersection:
+
                 continue
 
-            # Jaccard similarity.
+            # Jaccard similarity
             union = (
                 new_tokens
                 | existing_tokens
@@ -347,8 +349,8 @@ class KnowledgeManager:
 
         # Conservative threshold.
         #
-        # This prevents loosely related tasks from
-        # being merged together.
+        # This prevents loosely related tasks
+        # from being merged.
         if best_score >= 0.60:
 
             return best_match
@@ -479,6 +481,200 @@ class KnowledgeManager:
 
         return record
 
+    # =================================================
+    # TASK LIFECYCLE
+    # =================================================
+
+    def start_task(
+        self,
+        task
+    ):
+        """
+        Create a new task or mark a matching task
+        as running.
+        """
+
+        return self.update_task_status(
+            task=task,
+            status="running",
+            steps=0,
+            replans_used=0
+        )
+
+    def update_task_status(
+        self,
+        task,
+        status,
+        steps=None,
+        replans_used=None
+    ):
+        """
+        Update an existing task's lifecycle status.
+
+        Supported statuses:
+
+            pending
+            running
+            completed
+            failed
+            recovered
+
+        If no matching task exists, a new task
+        record is created.
+        """
+
+        if not isinstance(
+            task,
+            str
+        ):
+
+            raise TypeError(
+                "task must be a string."
+            )
+
+        task = task.strip()
+
+        if not task:
+
+            raise ValueError(
+                "task cannot be empty."
+            )
+
+        valid_statuses = {
+
+            "pending",
+            "running",
+            "completed",
+            "failed",
+            "recovered"
+        }
+
+        status = str(
+            status
+        ).strip().lower()
+
+        if status not in valid_statuses:
+
+            raise ValueError(
+                f"Invalid task status: {status}"
+            )
+
+        data = self.load_json(
+            self.tasks_file
+        )
+
+        tasks = data.get(
+            "tasks",
+            []
+        )
+
+        duplicate = (
+            self._find_duplicate_task(
+                task,
+                tasks
+            )
+        )
+
+        # ---------------------------------------------
+        # No existing task
+        # ---------------------------------------------
+
+        if duplicate is None:
+
+            return self.add_task(
+                task=task,
+                status=status,
+                steps=(
+                    0
+                    if steps is None
+                    else steps
+                ),
+                replans_used=(
+                    0
+                    if replans_used is None
+                    else replans_used
+                )
+            )
+
+        # ---------------------------------------------
+        # Update existing task
+        # ---------------------------------------------
+
+        duplicate["status"] = status
+
+        if steps is not None:
+
+            duplicate["steps"] = int(
+                steps
+            )
+
+        if replans_used is not None:
+
+            duplicate["replans_used"] = int(
+                replans_used
+            )
+
+        duplicate["timestamp"] = (
+            datetime.now(
+                timezone.utc
+            ).isoformat()
+        )
+
+        data["tasks"] = tasks
+
+        self.save_json(
+            self.tasks_file,
+            data
+        )
+
+        return duplicate
+
+    def get_tasks_by_status(
+        self,
+        status
+    ):
+        """
+        Return all tasks matching a lifecycle status.
+        """
+
+        if not isinstance(
+            status,
+            str
+        ):
+
+            return []
+
+        status = (
+            status
+            .strip()
+            .lower()
+        )
+
+        return [
+
+            task
+
+            for task in self.get_tasks()
+
+            if (
+                isinstance(
+                    task,
+                    dict
+                )
+                and str(
+                    task.get(
+                        "status",
+                        ""
+                    )
+                ).strip().lower()
+                == status
+            )
+        ]
+
+    # =================================================
+    # GET TASKS
+    # =================================================
+
     def get_tasks(self):
 
         data = self.load_json(
@@ -507,7 +703,11 @@ class KnowledgeManager:
 
             return []
 
-        query = query.strip().lower()
+        query = (
+            query
+            .strip()
+            .lower()
+        )
 
         if not query:
 
@@ -588,6 +788,7 @@ class KnowledgeManager:
             ).strip().lower()
 
             if not task_text:
+
                 continue
 
             task_tokens = {
@@ -608,6 +809,7 @@ class KnowledgeManager:
             task_tokens -= stop_words
 
             if not task_tokens:
+
                 continue
 
             matched_tokens = (
@@ -616,6 +818,7 @@ class KnowledgeManager:
             )
 
             if not matched_tokens:
+
                 continue
 
             score = (
@@ -623,10 +826,12 @@ class KnowledgeManager:
                 / len(query_tokens)
             )
 
+            # Exact phrase bonus
             if query in task_text:
 
                 score += 0.50
 
+            # Single-token query bonus
             if len(
                 query_tokens
             ) == 1:
@@ -640,6 +845,7 @@ class KnowledgeManager:
                 )
             )
 
+        # Highest relevance first
         scored_tasks.sort(
             key=lambda item: item[0],
             reverse=True
