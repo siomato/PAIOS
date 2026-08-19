@@ -43,6 +43,7 @@ from app.core.recovery_engine import recovery_engine
 from app.core.agent_state import AgentState
 from app.core.agent_evaluator import agent_evaluator
 from app.tools.browser_tools import browser_tools
+from app.memory.knowledge_manager import KnowledgeManager
 
 
 class AgentController:
@@ -52,6 +53,8 @@ class AgentController:
     # ========================================================
 
     def __init__(self):
+
+        self.knowledge = KnowledgeManager()
 
         print(
             "🤖 AGENT CONTROLLER MODULE LOADED 🤖"
@@ -1657,6 +1660,39 @@ class AgentController:
                     print(
                         "🎉 TASK COMPLETED SUCCESSFULLY."
                     )
+
+                    # ---------------------------------------------
+                    # TASK MEMORY
+                    # ---------------------------------------------
+                    # Store one task-level outcome only after the
+                    # controller has confirmed every planned step.
+                    # Browser actions themselves are not persisted
+                    # as long-term memory.
+                    try:
+
+                        self.knowledge.add_task(
+                            task=user_message,
+                            status="completed",
+                            steps=total_steps,
+                            replans_used=getattr(
+                                state,
+                                "replans_used",
+                                0
+                            )
+                        )
+
+                        print(
+                            "🧠 Task outcome saved to memory."
+                        )
+
+                    except Exception as memory_error:
+
+                        # Memory must never break an otherwise
+                        # successful autonomous task.
+                        print(
+                            "⚠️ Task memory save failed: "
+                            f"{memory_error}"
+                        )
 
                     self._emit_event(
                         event_callback,

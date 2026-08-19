@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -88,7 +89,8 @@ class KnowledgeManager:
         data = self.load_json(self.projects_file)
 
         return data.get("projects", [])
-        # -------------------------
+
+    # -------------------------
     # Preferences
     # -------------------------
 
@@ -105,3 +107,82 @@ class KnowledgeManager:
         data = self.load_json(self.preferences_file)
 
         return data.get(key)
+
+    # -------------------------
+    # Task Memory
+    # -------------------------
+
+    def add_task(
+        self,
+        task,
+        status="completed",
+        steps=0,
+        replans_used=0
+    ):
+
+        if not isinstance(task, str):
+            raise TypeError("task must be a string.")
+
+        task = task.strip()
+
+        if not task:
+            raise ValueError("task cannot be empty.")
+
+        data = self.load_json(self.tasks_file)
+
+        tasks = data.get("tasks", [])
+
+        record = {
+            "task": task,
+            "status": status,
+            "steps": int(steps),
+            "replans_used": int(replans_used),
+            "timestamp": datetime.now(
+                timezone.utc
+            ).isoformat()
+        }
+
+        tasks.append(record)
+
+        data["tasks"] = tasks
+
+        self.save_json(
+            self.tasks_file,
+            data
+        )
+
+        return record
+
+    def get_tasks(self):
+
+        data = self.load_json(
+            self.tasks_file
+        )
+
+        return data.get(
+            "tasks",
+            []
+        )
+
+    def find_tasks(self, query):
+
+        if not isinstance(query, str):
+            return []
+
+        query = query.strip().lower()
+
+        if not query:
+            return []
+
+        matches = []
+
+        for task in self.get_tasks():
+
+            text = str(
+                task.get("task", "")
+            ).lower()
+
+            if query in text:
+                matches.append(task)
+
+        return matches
