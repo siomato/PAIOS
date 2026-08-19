@@ -1868,6 +1868,23 @@ class AgentController:
 
                     state.status = "failed"
 
+                self._mark_task_status(
+                    user_message,
+                    "failed",
+                    steps=len(
+                        getattr(
+                            state,
+                            "completed_steps",
+                            []
+                        )
+                    ),
+                    replans_used=getattr(
+                        state,
+                        "replans_used",
+                        0
+                    )
+                )
+
                 reason = (
                     evaluation.get(
                         "reason"
@@ -2364,6 +2381,23 @@ class AgentController:
         except Exception:
 
             state.status = "failed"
+
+        self._mark_task_status(
+            user_message,
+            "failed",
+            steps=len(
+                getattr(
+                    state,
+                    "completed_steps",
+                    []
+                )
+            ),
+            replans_used=getattr(
+                state,
+                "replans_used",
+                0
+            )
+        )
 
         error = (
             "Autonomous loop exceeded "
