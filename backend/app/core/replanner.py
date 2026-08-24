@@ -1,266 +1,776 @@
-# ============================================================
-# app/core/replanner.py
-#
-# PAIOS REPLANNER - RELIABLE VERSION
-# ============================================================
-
-import hashlib
-import re
-from urllib.parse import urlparse
+from typing import Any, Dict, List
 
 
 class Replanner:
-    """Deterministic recovery planner for browser actions.
 
-    The replanner never uses an LLM. It converts malformed/unknown actions
-    into the closest supported browser action and preserves the remaining
-    objective whenever a complete plan is available.
-    """
-
-    SUPPORTED_ACTIONS = {
-        "open_url",
-        "search",
-        "click",
-        "find",
-        "read",
-        "fill",
-        "press",
-    }
+    # =========================================================
+    # INITIALIZATION
+    # =========================================================
 
     def __init__(self):
-        print("🧠 REPLANNER MODULE LOADED 🧠")
+        print(
+            "🧠 REPLANNER MODULE LOADED 🧠"
+        )
 
-    def _failure_text(self, failure):
-        if failure is None:
-            return ""
-        if isinstance(failure, dict):
-            parts = []
-            for key in ("error", "reason", "message", "status"):
-                value = failure.get(key)
-                if value is not None:
-                    parts.append(str(value))
-            return " ".join(parts).strip().lower()
-        return str(failure).strip().lower()
+    # =========================================================
+    # ACTION SIGNATURE
+    # =========================================================
 
-    def _copy_action(self, action):
-        return dict(action) if isinstance(action, dict) else None
+    def _action_signature(
+        self,
+        action: Any
+    ):
+        if not isinstance(
+            action,
+            dict
+        ):
+            return None
 
-    def _metadata(self, actions, original_plan):
-        actions = [self._copy_action(a) for a in actions if isinstance(a, dict)]
-        actions = [a for a in actions if a is not None]
+        return (
+            action.get("action"),
+            action.get("target"),
+            action.get("query"),
+            action.get("url"),
+            action.get("command"),
+            action.get("key")
+        )
 
-        plan_id = None
-        for item in original_plan or []:
-            if isinstance(item, dict) and item.get("plan_id"):
-                plan_id = item["plan_id"]
-                break
+    # =========================================================
+    # SAME ACTION CHECK
+    # =========================================================
 
-        if not plan_id:
-            digest = hashlib.sha1(
-                repr(original_plan).encode("utf-8")
-            ).hexdigest()[:12]
-            plan_id = f"replan-{digest}"
+    def _same_action(
+        self,
+        first: Any,
+        second: Any
+    ) -> bool:
 
-        total = len(actions)
-        result = []
-        for index, action in enumerate(actions, start=1):
-            item = dict(action)
-            item["plan_id"] = plan_id
-            item["step_index"] = index
-            item["total_steps"] = total
-            item["replanned"] = True
-            result.append(item)
-        return result
+        first_signature = (
+            self._action_signature(
+                first
+            )
+        )
 
-    def _command_text(self, action):
-        if not isinstance(action, dict):
-            return ""
-        values = []
-        for key in ("command", "target", "query", "url", "text", "value", "key"):
-            value = action.get(key)
-            if value is not None:
-                values.append(str(value))
-        return " ".join(values).strip()
+        second_signature = (
+            self._action_signature(
+                second
+            )
+        )
 
-    def _extract_url(self, text):
-        match = re.search(r"https?://[^\s,]+", text, re.I)
-        return match.group(0).rstrip(".,)]") if match else None
+        if (
+            first_signature is None
+            or
+            second_signature is None
+        ):
+            return False
 
-    def _normalize_unknown(self, action):
-        """Convert an unknown/malformed action into a supported action."""
-        if not isinstance(action, dict):
-            return None, "Invalid action."
+        return (
+            first_signature
+            ==
+            second_signature
+        )
 
-        command = self._command_text(action)
-        text = command.lower()
-        url = action.get("url") or self._extract_url(command)
+    # =========================================================
+    # STRIP EXECUTION METADATA
+    # =========================================================
 
-        if url:
-            return {"action": "open_url", "url": url}, "Recovered URL navigation from command."
+    def _clean_action(
+        self,
+        action
+    ):
 
-        # Explicit action synonyms.
-        if any(word in text for word in ("read the page", "read page", "read the current page", "tell me what", "summarize the page")):
-            return {"action": "read"}, "Recovered page-read intent from command."
+        if not isinstance(
+            action,
+            dict
+        ):
+            return action
 
-        if re.search(r"\bfind\b|\bsearch for\b|\blook for\b|\blocate\b", text):
-            query = action.get("query")
-            if not query:
-                match = re.search(r"(?:find|search for|look for|locate)\s+(.+?)(?:[.!?]|$)", command, re.I)
-                query = match.group(1).strip() if match else command
-            return {"action": "find", "query": query}, "Recovered find intent from command."
+        cleaned = dict(
+            action
+        )
 
-        if re.search(r"\bclick\b|\bselect\b|\bopen the\b", text):
-            target = action.get("target")
-            if not target:
-                match = re.search(r"(?:click|select|open(?: the)?)\s+(.+?)(?:[.!?]|$)", command, re.I)
-                target = match.group(1).strip() if match else command
-            return {"action": "click", "target": target}, "Recovered click intent from command."
+        cleaned.pop(
+            "plan_id",
+            None
+        )
 
-        if re.search(r"\btype\b|\bfill\b|\benter\b", text):
-            command_value = action.get("command") or action.get("text") or action.get("value")
-            if command_value:
-                return {"action": "fill", "command": str(command_value)}, "Recovered fill intent from command."
+        cleaned.pop(
+            "step_index",
+            None
+        )
 
-        if re.search(r"\bpress\b|\bkey\b", text):
-            key = action.get("key")
-            if not key:
-                match = re.search(r"(?:press|key)\s+(.+?)(?:[.!?]|$)", command, re.I)
-                key = match.group(1).strip() if match else None
-            if key:
-                return {"action": "press", "key": key}, "Recovered key-press intent from command."
+        cleaned.pop(
+            "total_steps",
+            None
+        )
 
-        if command:
-            return {"action": "read"}, "Unknown action; re-read the current page to re-establish context."
+        cleaned.pop(
+            "replanned",
+            None
+        )
 
-        return None, "Unable to recover malformed action."
+        return cleaned
 
-    def replan_action(self, action, failure):
-        print("\n========== REPLANNING ==========")
-        print(f"Failed action: {action}")
-        print(f"Failure: {failure}")
+    # =========================================================
+    # STRATEGY GENERATION
+    # =========================================================
 
-        if not isinstance(action, dict):
-            return {"status": "failed", "error": "Invalid action format.", "actions": []}
+    def replan_action(
+        self,
+        action,
+        failure
+    ):
 
-        action_type = str(action.get("action") or "unknown").strip().lower()
-        failure_text = self._failure_text(failure)
+        if not isinstance(
+            action,
+            dict
+        ):
+            return {
+                "status": "failed",
+                "error": "Invalid failed action.",
+                "actions": []
+            }
 
-        # Unknown/malformed action is the critical recovery path.
-        if action_type not in self.SUPPORTED_ACTIONS:
-            recovered, reason = self._normalize_unknown(action)
-            if recovered is None:
-                return {"status": "failed", "error": reason, "actions": []}
-            print(f"🔧 Normalized unknown action → {recovered}")
-            return {"status": "success", "reason": reason, "actions": [recovered]}
+        action_type = str(
+            action.get(
+                "action",
+                ""
+            )
+        ).strip().lower()
 
-        if action_type == "open_url":
-            url = str(action.get("url") or "").strip()
-            if not url:
-                return {"status": "failed", "error": "Open URL is empty.", "actions": []}
-            try:
-                domain = urlparse(url).netloc or urlparse(url).path or url
-            except Exception:
-                domain = url
-            if any(x in failure_text for x in ("timeout", "navigation", "browser", "failed", "network")):
-                return {
-                    "status": "success",
-                    "reason": "Direct navigation failed; search for the destination instead.",
-                    "actions": [{"action": "search", "query": domain}],
-                }
-            return {"status": "success", "reason": "Retry URL navigation after recovery.", "actions": [dict(action)]}
+        # =====================================================
+        # SEARCH
+        # =====================================================
 
         if action_type == "search":
-            query = str(action.get("query") or "").strip()
+
+            query = str(
+                action.get(
+                    "query",
+                    ""
+                )
+            ).strip()
+
             if not query:
-                return {"status": "failed", "error": "Search query is empty.", "actions": []}
-            return {"status": "success", "reason": "Retry search using the browser search path.", "actions": [{"action": "search", "query": query}]}
-
-        if action_type == "click":
-            target = str(action.get("target") or "").strip()
-            if not target:
-                return {"status": "failed", "error": "Click target is empty.", "actions": []}
-            lower = target.lower()
-            if lower in {"first result", "the first result", "first search result", "the first search result", "first useful result", "the first useful result"}:
-                actions = [{"action": "read"}, {"action": "click", "target": "first search result"}]
-            else:
-                actions = [{"action": "read"}, {"action": "click", "target": target}]
-            return {"status": "success", "reason": "Re-read the current page before retrying the click target.", "actions": actions}
-
-        if action_type == "find":
-            query = str(action.get("query") or "").strip()
-            if not query:
-                return {"status": "failed", "error": "Find query is empty.", "actions": []}
-            return {"status": "success", "reason": "Re-read the current page before finding the target.", "actions": [{"action": "read"}, {"action": "find", "query": query}]}
-
-        if action_type == "read":
-            return {"status": "success", "reason": "Retry reading the current page.", "actions": [{"action": "read"}]}
-
-        if action_type == "fill":
-            command = str(action.get("command") or action.get("text") or action.get("value") or "").strip()
-            if not command:
-                return {"status": "failed", "error": "Fill command is empty.", "actions": []}
-            return {"status": "success", "reason": "Re-establish page context before filling.", "actions": [{"action": "read"}, {"action": "fill", "command": command}]}
-
-        if action_type == "press":
-            key = str(action.get("key") or "").strip()
-            if not key:
-                return {"status": "failed", "error": "Press key is empty.", "actions": []}
-            return {"status": "success", "reason": "Re-establish page context before pressing the key.", "actions": [{"action": "press", "key": key}]}
-
-        return {"status": "failed", "error": f"No replanning strategy for action: {action_type}", "actions": []}
-
-    def replan(self, original_steps, failed_step, failure):
-        print("\n========================================")
-        print("          🧠 REPLANNER")
-        print("========================================")
-
-        if not isinstance(original_steps, list) or not original_steps:
-            return {"status": "failed", "error": "Original plan is empty or invalid.", "steps": []}
-        if not isinstance(failed_step, int) or failed_step < 1 or failed_step > len(original_steps):
-            return {"status": "failed", "error": "Failed step is outside the plan.", "steps": []}
-
-        failed_action = original_steps[failed_step - 1]
-        print(f"Failed step: {failed_step}")
-        print(f"Failed action: {failed_action}")
-
-        result = self.replan_action(failed_action, failure)
-        if result.get("status") != "success":
-            return {"status": "failed", "error": result.get("error", "Replanner failed."), "steps": []}
-
-        new_actions = result.get("actions") or []
-        if not new_actions:
-            return {"status": "failed", "error": "Replanner generated no alternative actions.", "steps": []}
-
-        # Preserve the remaining original objective after the failed step.
-        remaining_steps = original_steps[failed_step:]
-        new_plan = list(new_actions) + list(remaining_steps)
-
-        # Remove an immediate exact retry if the alternative contains no
-        # different action before it.
-        if len(new_plan) > 1 and isinstance(new_plan[0], dict) and isinstance(failed_action, dict):
-            same = all(
-                new_plan[0].get(k) == failed_action.get(k)
-                for k in ("action", "target", "query", "url", "command", "key")
-            )
-            if same and len(new_actions) == 1:
                 return {
                     "status": "failed",
-                    "error": "Replanner produced the same failed action.",
-                    "steps": [],
+                    "error": "Search query is empty.",
+                    "actions": []
                 }
 
-        new_plan = self._metadata(new_plan, original_steps)
+            return {
+                "status": "success",
+                "reason":
+                    "Refresh the page context before retrying search.",
+                "actions": [
+                    {
+                        "action": "read"
+                    },
+                    {
+                        "action": "search",
+                        "query": query
+                    }
+                ]
+            }
 
-        print("\n📋 New plan:")
-        for index, step in enumerate(new_plan, start=1):
-            print(f"  {index}. {step}")
+        # =====================================================
+        # CLICK
+        # =====================================================
+
+        if action_type == "click":
+
+            target = str(
+                action.get(
+                    "target",
+                    ""
+                )
+            ).strip()
+
+            if not target:
+
+                return {
+                    "status": "failed",
+                    "error":
+                        "Click target is empty.",
+                    "actions": []
+                }
+
+            return {
+                "status": "success",
+                "reason":
+                    "Re-read the current page before "
+                    "retrying the click target.",
+                "actions": [
+                    {
+                        "action": "read"
+                    },
+                    {
+                        "action": "click",
+                        "target": target
+                    }
+                ]
+            }
+
+        # =====================================================
+        # FIND
+        # =====================================================
+
+        if action_type == "find":
+
+            query = str(
+                action.get(
+                    "query",
+                    ""
+                )
+            ).strip()
+
+            if not query:
+
+                return {
+                    "status": "failed",
+                    "error":
+                        "Find query is empty.",
+                    "actions": []
+                }
+
+            return {
+                "status": "success",
+                "reason":
+                    "Refresh page context before retrying find.",
+                "actions": [
+                    {
+                        "action": "read"
+                    },
+                    {
+                        "action": "find",
+                        "query": query
+                    }
+                ]
+            }
+
+        # =====================================================
+        # READ
+        # =====================================================
+
+        if action_type == "read":
+
+            return {
+                "status": "success",
+                "reason":
+                    "Re-read the current page before retrying.",
+                "actions": [
+                    {
+                        "action": "read"
+                    }
+                ]
+            }
+
+        # =====================================================
+        # FILL
+        # =====================================================
+
+        if action_type == "fill":
+
+            command = str(
+                action.get(
+                    "command",
+                    ""
+                )
+            ).strip()
+
+            if not command:
+
+                return {
+                    "status": "failed",
+                    "error":
+                        "Fill command is empty.",
+                    "actions": []
+                }
+
+            return {
+                "status": "success",
+                "reason":
+                    "Re-read the page before retrying fill.",
+                "actions": [
+                    {
+                        "action": "read"
+                    },
+                    {
+                        "action": "fill",
+                        "command": command
+                    }
+                ]
+            }
+
+        # =====================================================
+        # PRESS
+        # =====================================================
+
+        if action_type == "press":
+
+            key = str(
+                action.get(
+                    "key",
+                    ""
+                )
+            ).strip()
+
+            if not key:
+
+                return {
+                    "status": "failed",
+                    "error":
+                        "Press key is empty.",
+                    "actions": []
+                }
+
+            return {
+                "status": "success",
+                "reason":
+                    "Re-establish page context before pressing key.",
+                "actions": [
+                    {
+                        "action": "press",
+                        "key": key
+                    }
+                ]
+            }
+
+        # =====================================================
+        # OPEN URL
+        # =====================================================
+
+        if action_type == "open_url":
+
+            url = str(
+                action.get(
+                    "url",
+                    ""
+                )
+            ).strip()
+
+            if not url:
+
+                return {
+                    "status": "failed",
+                    "error":
+                        "Open URL is empty.",
+                    "actions": []
+                }
+
+            return {
+                "status": "success",
+                "reason":
+                    "Retry URL navigation using the supported "
+                    "open_url action.",
+                "actions": [
+                    {
+                        "action": "open_url",
+                        "url": url
+                    }
+                ]
+            }
+
+        # =====================================================
+        # UNSUPPORTED ACTION
+        # =====================================================
+
+        return {
+            "status": "failed",
+            "error":
+                f"No replanning strategy for action: {action_type}",
+            "actions": []
+        }
+
+    # =========================================================
+    # REPLAN
+    # =========================================================
+
+    def replan(
+        self,
+        original_steps,
+        failed_step,
+        failure
+    ):
+
+        print(
+            "\n========================================"
+        )
+
+        print(
+            "          🧠 REPLANNER"
+        )
+
+        print(
+            "========================================"
+        )
+
+        # =====================================================
+        # VALIDATE ORIGINAL PLAN
+        # =====================================================
+
+        if (
+            not isinstance(
+                original_steps,
+                list
+            )
+            or
+            not original_steps
+        ):
+
+            return {
+                "status": "failed",
+                "error":
+                    "Original plan is empty or invalid.",
+                "steps": []
+            }
+
+        # =====================================================
+        # VALIDATE FAILED STEP
+        # =====================================================
+
+        if (
+            not isinstance(
+                failed_step,
+                int
+            )
+            or
+            failed_step < 1
+            or
+            failed_step > len(
+                original_steps
+            )
+        ):
+
+            return {
+                "status": "failed",
+                "error":
+                    "Failed step is outside the plan.",
+                "steps": []
+            }
+
+        # =====================================================
+        # GET FAILED ACTION
+        # =====================================================
+
+        failed_action = original_steps[
+            failed_step - 1
+        ]
+
+        print(
+            f"Failed step: {failed_step}"
+        )
+
+        print(
+            f"Failed action: {failed_action}"
+        )
+
+        # =====================================================
+        # GENERATE ALTERNATIVE
+        # =====================================================
+
+        result = self.replan_action(
+            failed_action,
+            failure
+        )
+
+        if result.get(
+            "status"
+        ) != "success":
+
+            return {
+                "status": "failed",
+                "error":
+                    result.get(
+                        "error",
+                        "Replanner failed."
+                    ),
+                "steps": []
+            }
+
+        new_actions = (
+            result.get(
+                "actions"
+            )
+            or
+            []
+        )
+
+        if not new_actions:
+
+            return {
+                "status": "failed",
+                "error":
+                    "Replanner generated no alternative actions.",
+                "steps": []
+            }
+
+        # =====================================================
+        # CLEAN METADATA
+        # =====================================================
+
+        cleaned_actions = []
+
+        for action in new_actions:
+
+            cleaned_actions.append(
+                self._clean_action(
+                    action
+                )
+            )
+
+        new_actions = cleaned_actions
+
+        # =====================================================
+        # LOOP GUARD #1
+        #
+        # Prevent a direct identical retry.
+        # =====================================================
+
+        if len(
+            new_actions
+        ) == 1:
+
+            if self._same_action(
+                new_actions[0],
+                failed_action
+            ):
+
+                return {
+                    "status": "failed",
+                    "error":
+                        "Replanner generated the same failed action.",
+                    "steps": []
+                }
+
+        # =====================================================
+        # REMAINING ORIGINAL STEPS
+        # =====================================================
+
+        remaining_steps = original_steps[
+            failed_step:
+        ]
+
+        # =====================================================
+        # BUILD NEW PLAN
+        # =====================================================
+
+        new_plan = (
+            list(
+                new_actions
+            )
+            +
+            [
+                self._clean_action(
+                    step
+                )
+                for step in remaining_steps
+            ]
+        )
+
+        # =====================================================
+        # LOOP GUARD #2
+        #
+        # Example:
+        #
+        # read
+        # click SAME_FAILED_TARGET
+        #
+        # This is not a meaningful click recovery.
+        # =====================================================
+
+        if len(
+            new_actions
+        ) >= 2:
+
+            generated_retry = (
+                new_actions[-1]
+            )
+
+            if self._same_action(
+                generated_retry,
+                failed_action
+            ):
+
+                action_type = str(
+                    failed_action.get(
+                        "action",
+                        ""
+                    )
+                ).strip().lower()
+
+                if action_type == "click":
+
+                    failure_text = str(
+                        failure.get(
+                            "error",
+                            ""
+                        )
+                        if isinstance(
+                            failure,
+                            dict
+                        )
+                        else
+                        failure
+                    ).lower()
+
+                    target_failure = (
+                        "could not resolve target"
+                        in failure_text
+                        or
+                        "target"
+                        in failure_text
+                    )
+
+                    if target_failure:
+
+                        return {
+                            "status": "failed",
+                            "error":
+                                "Replanner could not produce "
+                                "a different click target.",
+                            "steps": []
+                        }
+
+        # =====================================================
+        # REMOVE IMMEDIATE EXACT RETRY
+        # =====================================================
+
+        if len(
+            new_plan
+        ) > 1:
+
+            if self._same_action(
+                new_plan[0],
+                failed_action
+            ):
+
+                new_plan = new_plan[
+                    1:
+                ]
+
+        # =====================================================
+        # FINAL PLAN VALIDATION
+        # =====================================================
+
+        if not new_plan:
+
+            return {
+                "status": "failed",
+                "error":
+                    "Replanner produced an empty plan.",
+                "steps": []
+            }
+
+        # =====================================================
+        # PLAN METADATA
+        # =====================================================
+
+        total_steps = len(
+            new_plan
+        )
+
+        plan_id = (
+            "replan-"
+            +
+            str(
+                abs(
+                    hash(
+                        str(
+                            new_plan
+                        )
+                    )
+                )
+            )
+        )
+
+        final_steps = []
+
+        for index, action in enumerate(
+            new_plan,
+            start=1
+        ):
+
+            if not isinstance(
+                action,
+                dict
+            ):
+                continue
+
+            enriched = dict(
+                action
+            )
+
+            enriched[
+                "plan_id"
+            ] = plan_id
+
+            enriched[
+                "step_index"
+            ] = index
+
+            enriched[
+                "total_steps"
+            ] = total_steps
+
+            enriched[
+                "replanned"
+            ] = True
+
+            final_steps.append(
+                enriched
+            )
+
+        # =====================================================
+        # FINAL VALIDATION
+        # =====================================================
+
+        if not final_steps:
+
+            return {
+                "status": "failed",
+                "error":
+                    "Replanner produced no valid actions.",
+                "steps": []
+            }
+
+        # =====================================================
+        # LOG PLAN
+        # =====================================================
+
+        print(
+            "\n🧠 Replanned steps:"
+        )
+
+        for index, step in enumerate(
+            final_steps,
+            start=1
+        ):
+
+            print(
+                f"{index}. {step}"
+            )
+
+        # =====================================================
+        # SUCCESS
+        # =====================================================
 
         return {
             "status": "success",
-            "reason": result.get("reason"),
-            "steps": new_plan,
-            "failed_step": failed_step,
+            "reason":
+                result.get(
+                    "reason",
+                    "Alternative execution plan generated."
+                ),
+            "steps":
+                final_steps,
+            "failed_step":
+                failed_step
         }
 
+
+# =============================================================
+# GLOBAL INSTANCE
+# =============================================================
 
 replanner = Replanner()

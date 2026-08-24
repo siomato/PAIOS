@@ -181,6 +181,8 @@ class AgentController:
         # remains unchanged and the ActionPlanner is not modified.
         memory_matches = []
 
+        recovery_context = []
+
         try:
 
             memory_matches = self.knowledge.find_tasks(
@@ -192,6 +194,18 @@ class AgentController:
                 list
             ):
                 memory_matches = []
+
+            recovery_context = (
+                self.knowledge.get_task_recovery_context(
+                    user_message
+                )
+            )
+
+            if not isinstance(
+                recovery_context,
+                list
+            ):
+                recovery_context = []
 
             print(
                 "\n🧠 MEMORY RECALL"
@@ -214,10 +228,33 @@ class AgentController:
                         f"{memory_item.get('task', '')}"
                     )
 
+            print(
+                "🧠 RECOVERY CONTEXT"
+            )
+
+            print(
+                f"Previous recoverable attempt(s): "
+                f"{len(recovery_context)}"
+            )
+
+            for recovery_item in recovery_context[:5]:
+
+                if isinstance(
+                    recovery_item,
+                    dict
+                ):
+
+                    print(
+                        "  ↳ "
+                        f"{recovery_item.get('status', '')}: "
+                        f"{recovery_item.get('task', '')}"
+                    )
+
         except Exception as memory_error:
 
             # Memory recall must never prevent planning.
             memory_matches = []
+            recovery_context = []
 
             print(
                 "⚠️ Memory recall failed: "
@@ -300,6 +337,8 @@ class AgentController:
             "steps": steps,
 
             "memory_recall": memory_matches[:5],
+
+            "recovery_context": recovery_context[:5],
 
             "error": None
 

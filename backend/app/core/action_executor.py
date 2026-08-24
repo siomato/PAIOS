@@ -858,8 +858,83 @@ class ActionExecutor:
 
                 start_time = time.time()
 
-                result = browser_tools.fill_from_command(
+                # Parse:
+                # "the search box with Python tutorials"
+                # into target="search box"
+                # and text="Python tutorials".
+
+                fill_command = str(
                     command
+                ).strip()
+
+                if fill_command.lower().startswith(
+                    "fill "
+                ):
+                    fill_command = (
+                        fill_command[5:].strip()
+                    )
+
+                separator = " with "
+                separator_index = (
+                    fill_command.lower().find(
+                        separator
+                    )
+                )
+
+                if separator_index == -1:
+
+                    return self._failure(
+                        "fill",
+                        ValueError(
+                            "Invalid fill command. "
+                            "Expected '<target> with <text>'. "
+                            f"Received: {command}"
+                        ),
+                        recoverable=False
+                    )
+
+                target = fill_command[
+                    :separator_index
+                ].strip()
+
+                text = fill_command[
+                    separator_index + len(separator):
+                ].strip()
+
+                if target.lower().startswith("the "):
+                    target = target[4:].strip()
+
+                if not target:
+
+                    return self._failure(
+                        "fill",
+                        ValueError(
+                            "Fill target could not be determined."
+                        ),
+                        recoverable=False
+                    )
+
+                if not text:
+
+                    return self._failure(
+                        "fill",
+                        ValueError(
+                            "Fill text could not be determined."
+                        ),
+                        recoverable=False
+                    )
+
+                print(
+                    f"🎯 Fill target: {target}"
+                )
+
+                print(
+                    f"📝 Fill text: {text}"
+                )
+
+                result = browser_tools.fill_from_command(
+                    target,
+                    text
                 )
 
                 duration = round(

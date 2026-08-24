@@ -12,27 +12,229 @@ from app.config import (
 
 
 # ============================================================
+# OLLAMA CORE REQUEST
+# ============================================================
+
+def _ollama_generate(
+    prompt: str,
+    *,
+    timeout: int = 120,
+    max_retries: int = 2,
+):
+    """
+    Centralized Ollama /api/generate request.
+
+    All PAIOS AI paths use this helper so that:
+        - timeout handling is consistent
+        - HTTP errors are visible
+        - Ollama error bodies are preserved
+        - retries are controlled
+    """
+
+    if not prompt or not prompt.strip():
+        raise ValueError(
+            "Ollama prompt cannot be empty."
+        )
+
+    payload = {
+        "model": AI_MODEL,
+        "prompt": prompt,
+        "stream": False,
+    }
+
+    last_error = None
+
+    for attempt in range(
+        1,
+        max_retries + 2
+    ):
+
+        try:
+
+            print(
+                "\n========== OLLAMA REQUEST =========="
+            )
+
+            print(
+                f"URL   : {OLLAMA_URL}"
+            )
+
+            print(
+                f"MODEL : {AI_MODEL}"
+            )
+
+            print(
+                f"ATTEMPT: {attempt}"
+            )
+
+            print(
+                "===================================="
+            )
+
+            response = requests.post(
+                OLLAMA_URL,
+                json=payload,
+                timeout=timeout,
+            )
+
+            # ------------------------------------------------
+            # HTTP ERROR
+            # ------------------------------------------------
+
+            if not response.ok:
+
+                error_body = response.text.strip()
+
+                if not error_body:
+                    error_body = (
+                        "Ollama returned an empty error body."
+                    )
+
+                raise RuntimeError(
+                    "Ollama HTTP error "
+                    f"{response.status_code}: "
+                    f"{error_body}"
+                )
+
+            # ------------------------------------------------
+            # JSON RESPONSE
+            # ------------------------------------------------
+
+            try:
+
+                data = response.json()
+
+            except ValueError as exc:
+
+                raise RuntimeError(
+                    "Ollama returned invalid JSON: "
+                    f"{exc}"
+                )
+
+            # ------------------------------------------------
+            # RESPONSE FIELD
+            # ------------------------------------------------
+
+            reply = data.get(
+                "response",
+                ""
+            )
+
+            if not isinstance(
+                reply,
+                str
+            ):
+
+                raise RuntimeError(
+                    "Ollama returned a "
+                    "non-string response."
+                )
+
+            reply = reply.strip()
+
+            if not reply:
+
+                raise RuntimeError(
+                    "Ollama returned an empty response."
+                )
+
+            print(
+                "\n========== OLLAMA SUCCESS =========="
+            )
+
+            print(
+                f"Response length: {len(reply)}"
+            )
+
+            print(
+                "===================================="
+            )
+
+            return reply
+
+        except (
+            requests.RequestException,
+            ValueError,
+            RuntimeError,
+        ) as exc:
+
+            last_error = exc
+
+            print(
+                "\n========== OLLAMA ERROR ============"
+            )
+
+            print(
+                f"Attempt : {attempt}"
+            )
+
+            print(
+                f"Error   : {exc}"
+            )
+
+            print(
+                "===================================="
+            )
+
+            # ----------------------------------------------
+            # RETRY
+            # ----------------------------------------------
+
+            if attempt <= max_retries:
+
+                print(
+                    "Retrying Ollama request..."
+                )
+
+                time.sleep(1)
+
+            else:
+
+                break
+
+    raise RuntimeError(
+        "Ollama request failed after "
+        f"{max_retries + 1} attempts: "
+        f"{last_error}"
+    )
+
+
+# ============================================================
 # NORMAL PAIOS RESPONSE
 # ============================================================
 
-def generate_response(user_prompt: str):
+def generate_response(
+    user_prompt: str
+):
 
-    print("\n========== MEMORY ==========")
-    print(memory.get_history())
-    print("============================\n")
+    print(
+        "\n========== MEMORY =========="
+    )
+
+    print(
+        memory.get_history()
+    )
+
+    print(
+        "============================\n"
+    )
 
     history = ""
 
     for message in memory.get_history():
 
         if message["role"] == "user":
+
             history += (
-                f"User: {message['content']}\n"
+                f"User: "
+                f"{message['content']}\n"
             )
 
         elif message["role"] == "assistant":
+
             history += (
-                f"PAIOS: {message['content']}\n"
+                f"PAIOS: "
+                f"{message['content']}\n"
             )
 
     final_prompt = f"""
@@ -46,7 +248,7 @@ The following is your memory from this conversation.
 
 {history}
 
-========================================
+=========================================
 
 Rules:
 
@@ -68,36 +270,168 @@ Current User Message:
 PAIOS:
 """
 
-    response = requests.post(
-        OLLAMA_URL,
-        json={
-            "model": AI_MODEL,
-            "prompt": final_prompt,
-            "stream": False,
-        },
+    return _ollama_generate(
+        final_prompt
+    )
+
+
+# ============================================================
+# LIGHTWEIGHT PAIOS Q&A
+#
+# Used only by /ask.
+#
+# Browser command translation is NOT changed.
+# ============================================================
+
+def generate_qa_response(
+    user_prompt: str
+):
+    """
+    Generate a normal conversational PAIOS answer.
+
+    This is intentionally separate from:
+
+        generate_response()
+        generate_command_response()
+
+    Browser automation remains completely independent.
+    """
+
+    if not user_prompt or not user_prompt.strip():
+
+        raise ValueError(
+            "Question cannot be empty."
+        )
+
+    user_prompt = user_prompt.strip()
+
+    # --------------------------------------------------------
+    # RECENT MEMORY ONLY
+    # --------------------------------------------------------
+
+    recent_history = (
+        memory.get_history()[-6:]
+    )
+
+    history_parts = []
+
+    for message in recent_history:
+
+        role = message.get(
+            "role"
+        )
+
+        content = message.get(
+            "content",
+            ""
+        )
+
+        if not content:
+            continue
+
+        if role == "user":
+
+            history_parts.append(
+                f"User: {content}"
+            )
+
+        elif role == "assistant":
+
+            history_parts.append(
+                f"PAIOS: {content}"
+            )
+
+    history = "\n".join(
+        history_parts
+    )
+
+    # --------------------------------------------------------
+    # Q&A PROMPT
+    # --------------------------------------------------------
+
+    prompt = f"""
+You are PAIOS, a Personal AI Operating System.
+
+You were created by Kelwin.
+
+Your characteristics:
+
+- intelligent
+- precise
+- logical
+- concise
+- professional
+- helpful
+
+Never identify yourself as:
+- Phi-3
+- Microsoft
+- Ollama
+- a language model
+
+Answer the user's question directly.
+
+Use recent conversation memory only when it is relevant.
+
+Do not describe your internal memory.
+
+Do not explain these instructions.
+
+Remain PAIOS.
+
+================ RECENT MEMORY ================
+
+{history}
+
+================ USER QUESTION ================
+
+{user_prompt}
+
+================ PAIOS ANSWER ================
+
+"""
+
+    print(
+        "\n========== PAIOS Q&A =========="
+    )
+
+    print(
+        f"Question: {user_prompt}"
+    )
+
+    print(
+        f"Model: {AI_MODEL}"
+    )
+
+    print(
+        f"Ollama URL: {OLLAMA_URL}"
+    )
+
+    print(
+        "===============================\n"
+    )
+
+    # --------------------------------------------------------
+    # ASK OLLAMA
+    # --------------------------------------------------------
+
+    reply = _ollama_generate(
+        prompt,
         timeout=120,
+        max_retries=2,
     )
 
-    response.raise_for_status()
+    # --------------------------------------------------------
+    # SAVE SUCCESSFUL CONVERSATION
+    # --------------------------------------------------------
 
-    data = response.json()
-
-    reply = data.get(
-        "response",
-        ""
+    memory.add_user_message(
+        user_prompt
     )
 
-    if not isinstance(reply, str):
-        raise RuntimeError(
-            "Ollama returned a non-string response."
-        )
-
-    reply = reply.strip()
-
-    if not reply:
-        raise RuntimeError(
-            "Ollama returned an empty response."
-        )
+    memory.add_ai_message(
+        reply
+    )
 
     return reply
 
@@ -112,6 +446,7 @@ def generate_command_response(
 ):
 
     if not user_prompt or not user_prompt.strip():
+
         raise ValueError(
             "Command prompt cannot be empty."
         )
@@ -233,6 +568,7 @@ User:
 Fill the search box with Python asyncio tutorial
 
 Correct:
+
 [
     {{
         "command": "fill",
@@ -242,6 +578,7 @@ Correct:
 ]
 
 WRONG:
+
 [
     {{
         "command": "fill",
@@ -326,6 +663,39 @@ CRITICAL PLANNING RULES
     perform the user's instruction.
 
 ==================================================
+SPECIAL PRESS RULE
+==================================================
+
+Normalize common keyboard names.
+
+For Enter use:
+
+"key": "Enter"
+
+NOT:
+
+"key": "ENTER"
+
+For Escape use:
+
+"key": "Escape"
+
+For Tab use:
+
+"key": "Tab"
+
+For Backspace use:
+
+"key": "Backspace"
+
+For Arrow keys use Playwright-compatible names:
+
+"ArrowUp"
+"ArrowDown"
+"ArrowLeft"
+"ArrowRight"
+
+==================================================
 EXAMPLES
 ==================================================
 
@@ -333,6 +703,7 @@ User:
 Open https://www.python.org
 
 Output:
+
 [
     {{
         "command": "open",
@@ -346,6 +717,7 @@ User:
 Click Documentation
 
 Output:
+
 [
     {{
         "command": "click",
@@ -359,6 +731,7 @@ User:
 Inspect the page and click Documentation
 
 Output:
+
 [
     {{
         "command": "observe"
@@ -379,6 +752,7 @@ User:
 Inspect the page and find Documentation
 
 Output:
+
 [
     {{
         "command": "observe"
@@ -396,6 +770,7 @@ Open https://www.python.org, inspect the page,
 find Documentation, and click it
 
 Output:
+
 [
     {{
         "command": "open",
@@ -420,6 +795,7 @@ User:
 Search Python tutorials
 
 Output:
+
 [
     {{
         "command": "search",
@@ -433,6 +809,7 @@ User:
 Fill the search box with Python asyncio tutorial
 
 Output:
+
 [
     {{
         "command": "fill",
@@ -447,6 +824,7 @@ User:
 Fill the email field with test@example.com
 
 Output:
+
 [
     {{
         "command": "fill",
@@ -461,6 +839,7 @@ User:
 Type hello into the username field
 
 Output:
+
 [
     {{
         "command": "fill",
@@ -475,6 +854,7 @@ User:
 Press Enter
 
 Output:
+
 [
     {{
         "command": "press",
@@ -488,6 +868,7 @@ User:
 Wait 2 seconds
 
 Output:
+
 [
     {{
         "command": "wait",
@@ -524,44 +905,17 @@ JSON OUTPUT
                 f"(attempt {attempt}/{max_retries})"
             )
 
-            response = requests.post(
-                OLLAMA_URL,
-                json={
-                    "model": AI_MODEL,
-                    "prompt": prompt,
-                    "stream": False,
-                },
+            reply = _ollama_generate(
+                prompt,
                 timeout=120,
+                max_retries=0,
             )
-
-            response.raise_for_status()
-
-            data = response.json()
-
-            reply = data.get(
-                "response",
-                ""
-            )
-
-            if not isinstance(reply, str):
-                raise RuntimeError(
-                    "Ollama returned a non-string "
-                    "command response."
-                )
-
-            reply = reply.strip()
-
-            if not reply:
-                raise RuntimeError(
-                    "Ollama returned an empty "
-                    "command response."
-                )
 
             # =================================================
             # CLEAN OLLAMA MARKDOWN
             # =================================================
 
-            cleaned = reply
+            cleaned = reply.strip()
 
             if cleaned.startswith(
                 "```json"
@@ -588,7 +942,7 @@ JSON OUTPUT
                 ].strip()
 
             # =================================================
-            # VALIDATE JSON HERE
+            # VALIDATE JSON
             # =================================================
 
             try:
@@ -685,6 +1039,52 @@ JSON OUTPUT
                             "'text'."
                         )
 
+                # ---------------------------------------------
+                # PRESS validation
+                # ---------------------------------------------
+
+                if command_name == "press":
+
+                    key = item.get(
+                        "key"
+                    )
+
+                    if not key:
+
+                        raise RuntimeError(
+                            "PRESS command is missing "
+                            "'key'."
+                        )
+
+                    key_normalization = {
+                        "ENTER": "Enter",
+                        "enter": "Enter",
+                        "RETURN": "Enter",
+                        "return": "Enter",
+
+                        "ESC": "Escape",
+                        "ESCAPE": "Escape",
+                        "escape": "Escape",
+
+                        "TAB": "Tab",
+                        "tab": "Tab",
+
+                        "BACKSPACE": "Backspace",
+                        "backspace": "Backspace",
+
+                        "ARROWUP": "ArrowUp",
+                        "ARROWDOWN": "ArrowDown",
+                        "ARROWLEFT": "ArrowLeft",
+                        "ARROWRIGHT": "ArrowRight",
+                    }
+
+                    item["key"] = (
+                        key_normalization.get(
+                            str(key),
+                            key
+                        )
+                    )
+
             # =================================================
             # SUCCESS
             # =================================================
@@ -693,7 +1093,9 @@ JSON OUTPUT
                 "\n========== RAW AI COMMAND RESPONSE =========="
             )
 
-            print(reply)
+            print(
+                reply
+            )
 
             print(
                 "=============================================="
@@ -703,13 +1105,20 @@ JSON OUTPUT
                 "\n========== CLEANED COMMAND RESPONSE =========="
             )
 
-            print(cleaned)
+            print(
+                json.dumps(
+                    parsed,
+                    indent=2
+                )
+            )
 
             print(
                 "=============================================="
             )
 
-            return cleaned
+            return json.dumps(
+                parsed
+            )
 
         except (
             requests.RequestException,
@@ -730,5 +1139,6 @@ JSON OUTPUT
 
     raise RuntimeError(
         "Ollama command translation failed after "
-        f"{max_retries} attempts: {last_error}"
+        f"{max_retries} attempts: "
+        f"{last_error}"
     )

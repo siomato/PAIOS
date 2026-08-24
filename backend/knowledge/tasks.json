@@ -10,9 +10,385 @@
         {
             "task": "Search the web for Python asyncio tutorials.",
             "status": "completed",
+            "steps": 2,
+            "replans_used": 0,
+            "timestamp": "2026-08-20T08:20:18.568529+00:00"
+        },
+        {
+            "task": "Open python.org and read the documentation",
+            "status": "completed",
+            "steps": 2,
+            "replans_used": 0,
+            "timestamp": "2026-08-21T10:15:57.744112+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open https://www.python.org, open the Documentation page, find asyncio, and read the page.",
+            "status": "completed",
+            "steps": 5,
+            "replans_used": 0,
+            "timestamp": "2026-08-20T17:52:02.158749+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open Python.org and click the Documentation link",
+            "status": "completed",
+            "steps": 2,
+            "replans_used": 0,
+            "timestamp": "2026-08-20T08:22:38.836452+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open a completely invalid website address that cannot exist and then read the documentation",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-20T08:25:17.828588+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "http://127.0.0.1:5500",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-20T16:32:03.754581+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open https://www.python.org",
+            "status": "completed",
             "steps": 1,
             "replans_used": 0,
-            "timestamp": "2026-08-19T04:58:50.285986+00:00"
+            "timestamp": "2026-08-22T05:17:14.624264+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open https://www.python.org then click Downloads",
+            "status": "completed",
+            "steps": 2,
+            "replans_used": 0,
+            "timestamp": "2026-08-20T16:35:28.973487+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open https://www.python.org then click Documentation then read the page",
+            "status": "completed",
+            "steps": 2,
+            "replans_used": 0,
+            "timestamp": "2026-08-22T05:18:09.830303+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open https://www.python.org then click Documentation then click Python 3.14.7 documentation",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-22T05:18:30.288867+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open https://www.python.orgClick Documentation",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-20T16:44:38.997058+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Click Documentation",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-20T16:44:51.322439+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Search for Python tutorials and click the first search result",
+            "status": "completed",
+            "steps": 2,
+            "replans_used": 0,
+            "timestamp": "2026-08-24T17:08:57.472739+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open Google, search for Python asyncio tutorials, and open one relevant result.",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-20T17:45:31.317816+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open https://www.python.org, go to Documentation, open the asyncio documentation, and find the section describing Tasks.",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-20T17:46:04.876875+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open https://www.python.org, navigate to Downloads, open the latest Python release page, and report the release version shown on the page.",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-20T17:46:19.486268+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open https://www.python.org, go to Documentation, find the asyncio documentation, and determine whether the page contains the word \"coroutine\".",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-20T17:47:35.947671+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open https://www.python.org, find the Documentation section, open the asyncio documentation, locate the Tasks documentation, and report what page you reached.",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-20T17:48:59.355717+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open https://www.python.org, navigate to Documentation, find the asyncio documentation, open it, inspect the page, and determine whether it contains information about Tasks. If it does, report the page title and URL.",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-20T17:49:50.118524+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open https://www.python.org, click Documentation, then click Library Reference.",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-20T17:59:58.979955+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open https://www.python.org, click Downloads, then click the latest Python release.",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-20T18:00:26.722886+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open Google and search for Python automation tutorials.",
+            "status": "completed",
+            "steps": 2,
+            "replans_used": 0,
+            "timestamp": "2026-08-22T05:17:47.448159+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open Google, search for Python Playwright tutorials, and read the first result.",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-21T08:10:39.466672+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open YouTube and search for Python programming tutorials.",
+            "status": "completed",
+            "steps": 3,
+            "replans_used": 0,
+            "timestamp": "2026-08-22T06:20:47.721005+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "TELL ME ABOUT PYTHON RECURSION",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-21T03:59:20.561057+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open YouTube, search for Python automation tutorials, open the first video, and tell me its title.",
+            "status": "completed",
+            "steps": 3,
+            "replans_used": 0,
+            "timestamp": "2026-08-21T08:10:28.653026+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open Google, search for Java HashMap tutorial, and read the first result.",
+            "status": "completed",
+            "steps": 4,
+            "replans_used": 0,
+            "timestamp": "2026-08-21T08:12:15.966800+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open YouTube",
+            "status": "completed",
+            "steps": 1,
+            "replans_used": 0,
+            "timestamp": "2026-08-24T17:09:05.679490+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open YouTube, fill the search box with Python tutorials, and press Enter",
+            "status": "completed",
+            "steps": 3,
+            "replans_used": 0,
+            "timestamp": "2026-08-24T17:06:13.925775+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open Google, search for FastAPI tutorials, open the first result, read the page, and tell me the page title",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-21T10:16:48.837980+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open GitHub, search for Playwright, and click the first result",
+            "status": "completed",
+            "steps": 3,
+            "replans_used": 0,
+            "timestamp": "2026-08-21T10:22:28.844102+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open Proteus",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-21T10:22:53.273752+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "2. Open YouTube, fill the search box with Jk tamil,  press Enter,  and click the first video",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-22T07:50:52.177386+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open YouTube, fill the search box with VJ SIDHU VLOGS, and  press Enter",
+            "status": "completed",
+            "steps": 3,
+            "replans_used": 0,
+            "timestamp": "2026-08-24T10:07:18.844004+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Search for Python tutoOpen YouTube, fill the search box with Jk tamil, and  press Enterrials and click the first search result",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-21T10:58:49.142982+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "open google , fill the search box with Mail , press the enter , open the first result",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-22T07:52:56.483032+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "open youtube , fill the search box with thuthukudi menavan , press enter",
+            "status": "completed",
+            "steps": 3,
+            "replans_used": 0,
+            "timestamp": "2026-08-22T16:47:28.706400+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "open youtube , fill the search box with kala sola song, press enter",
+            "status": "completed",
+            "steps": 3,
+            "replans_used": 0,
+            "timestamp": "2026-08-22T16:48:20.850949+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open Google, enter Python tutorials and press Enter.",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-24T14:26:48.254714+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Press Enter.",
+            "status": "completed",
+            "steps": 1,
+            "replans_used": 0,
+            "timestamp": "2026-08-24T17:10:17.626910+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "The first link.",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-24T14:33:16.922416+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open Google.",
+            "status": "completed",
+            "steps": 1,
+            "replans_used": 0,
+            "timestamp": "2026-08-24T17:01:38.366449+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Wolfson Chrome.",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-24T14:46:03.107711+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "[object Object]",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-24T16:51:36.841450+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open Python.",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-24T15:06:11.369856+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Film the search box with idli and press enter.",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-24T17:06:52.830103+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "fill the search box with Python.",
+            "status": "completed",
+            "steps": 1,
+            "replans_used": 0,
+            "timestamp": "2026-08-24T17:09:43.576695+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Enter.",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-24T17:09:54.681587+00:00",
+            "occurrences": 1
         }
     ]
 }

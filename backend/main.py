@@ -1,3 +1,5 @@
+from app.tts_router import router as tts_router
+from app.qa_router import router as qa_router
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -14,6 +16,9 @@ app = FastAPI(
     title="PAIOS",
     version="0.1.0"
 )
+
+app.include_router(qa_router)
+app.include_router(tts_router)
 
 
 # ============================================================

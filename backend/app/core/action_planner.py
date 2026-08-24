@@ -15,9 +15,36 @@ class ActionPlanner:
         if not message:
             return []
 
+        # =================================================
+        # SITE-SCOPED SEARCH NORMALIZATION
+        # =================================================
+        #
+        # Examples:
+        #
+        #   On YouTube, search for Python tutorials
+        #   On YouTube search for Python tutorials
+        #   Search YouTube for Python tutorials
+        #   Search Python tutorials on YouTube
+        #
+        # These are converted into:
+        #
+        #   Open YouTube and search for Python tutorials
+        #
+        # This prevents "On YouTube" from becoming:
+        #
+        #   {'action': 'unknown', ...}
+        #
+        # =================================================
+
+        message = self._normalize_site_search(
+            message
+        )
+
         steps = []
 
-        parts = self._split_commands(message)
+        parts = self._split_commands(
+            message
+        )
 
         for part in parts:
 
@@ -33,10 +60,15 @@ class ActionPlanner:
             ).strip()
 
             if step.lower().startswith("and "):
+
                 step = step[4:].strip()
 
             if not step:
                 continue
+
+            # -------------------------------------------------
+            # Normalize trailing sentence punctuation
+            # -------------------------------------------------
 
             lower_step = re.sub(
                 r"[.!?]+$",
@@ -53,27 +85,13 @@ class ActionPlanner:
                 query = step[7:].strip()
 
                 if query.lower().startswith("for "):
+
                     query = query[4:].strip()
 
                 if query:
+
                     steps.append({
                         "action": "search",
-                        "query": query
-                    })
-
-                continue
-
-            # =================================================
-            # FIND
-            # =================================================
-
-            if lower_step.startswith("find "):
-
-                query = step[5:].strip()
-
-                if query:
-                    steps.append({
-                        "action": "find",
                         "query": query
                     })
 
@@ -88,7 +106,10 @@ class ActionPlanner:
                 target = step[6:].strip()
 
                 if target:
-                    target = self._normalize_click_target(target)
+
+                    target = self._normalize_click_target(
+                        target
+                    )
 
                     steps.append({
                         "action": "click",
@@ -110,6 +131,10 @@ class ActionPlanner:
 
                 target_lower = target.lower()
 
+                # -------------------------------------------------
+                # "open first result"
+                # -------------------------------------------------
+
                 if target_lower in (
                     "first result",
                     "the first result",
@@ -130,7 +155,13 @@ class ActionPlanner:
 
                     continue
 
-                url = self._resolve_website_url(target)
+                # -------------------------------------------------
+                # Resolve website
+                # -------------------------------------------------
+
+                url = self._resolve_website_url(
+                    target
+                )
 
                 if url:
 
@@ -159,14 +190,19 @@ class ActionPlanner:
             ):
 
                 if lower_step.startswith("go to "):
+
                     target = step[6:].strip()
+
                 else:
+
                     target = step[5:].strip()
 
                 if not target:
                     continue
 
-                url = self._resolve_website_url(target)
+                url = self._resolve_website_url(
+                    target
+                )
 
                 if url:
 
@@ -188,14 +224,18 @@ class ActionPlanner:
             # NAVIGATE TO
             # =================================================
 
-            if lower_step.startswith("navigate to "):
+            if lower_step.startswith(
+                "navigate to "
+            ):
 
                 target = step[12:].strip()
 
                 if not target:
                     continue
 
-                url = self._resolve_website_url(target)
+                url = self._resolve_website_url(
+                    target
+                )
 
                 if url:
 
@@ -222,11 +262,56 @@ class ActionPlanner:
                 "read page",
                 "read the page",
                 "read current page",
+                "read the current page",
             ):
 
                 steps.append({
                     "action": "read"
                 })
+
+                continue
+
+            # =================================================
+            # READ SPECIFIC PAGE
+            # =================================================
+            #
+            # Example:
+            #
+            #   read the Documentation page
+            #
+            # becomes:
+            #
+            #   click Documentation
+            #   read
+            #
+            # =================================================
+
+            page_target_match = re.match(
+                r"^read\s+(?:the\s+)?(.+?)\s+page$",
+                lower_step,
+                flags=re.IGNORECASE
+            )
+
+            if page_target_match:
+
+                target = page_target_match.group(
+                    1
+                ).strip()
+
+                if target:
+
+                    target = self._normalize_click_target(
+                        target
+                    )
+
+                    steps.append({
+                        "action": "click",
+                        "target": target
+                    })
+
+                    steps.append({
+                        "action": "read"
+                    })
 
                 continue
 
@@ -253,7 +338,43 @@ class ActionPlanner:
 
             if lower_step.startswith("press "):
 
+                # Extract the keyboard key from natural language.
                 key = step[6:].strip()
+
+                # Remove sentence punctuation that may be added by
+                # voice input or natural-language commands.
+                key = re.sub(
+                    r"[.,!?;:]+$",
+                    "",
+                    key
+                ).strip()
+
+                # Normalize common keyboard names to Playwright keys.
+                key_map = {
+                    "enter": "Enter",
+                    "return": "Enter",
+                    "esc": "Escape",
+                    "escape": "Escape",
+                    "space": "Space",
+                    "spacebar": "Space",
+                    "tab": "Tab",
+                    "backspace": "Backspace",
+                    "delete": "Delete",
+                    "del": "Delete",
+                    "up": "ArrowUp",
+                    "down": "ArrowDown",
+                    "left": "ArrowLeft",
+                    "right": "ArrowRight",
+                    "home": "Home",
+                    "end": "End",
+                    "page up": "PageUp",
+                    "page down": "PageDown",
+                }
+
+                key = key_map.get(
+                    key.lower(),
+                    key
+                )
 
                 if key:
 
@@ -273,9 +394,9 @@ class ActionPlanner:
                 "command": step
             })
 
-        # =================================================
+        # =====================================================
         # PLAN METADATA
-        # =================================================
+        # =====================================================
 
         total_steps = len(steps)
 
@@ -299,20 +420,160 @@ class ActionPlanner:
             item["total_steps"] = total_steps
             item["plan_id"] = plan_id
 
-            normalized_steps.append(item)
+            normalized_steps.append(
+                item
+            )
 
         return normalized_steps
+
+    # =====================================================
+    # NORMALIZE SITE-SCOPED SEARCH
+    # =====================================================
+
+    def _normalize_site_search(
+        self,
+        message: str
+    ):
+        """
+        Normalize site-scoped search requests.
+
+        Examples:
+
+            On YouTube, search for Python tutorials
+
+        becomes:
+
+            Open YouTube
+            Fill search box with Python tutorials
+            Press ENTER
+        """
+
+        if not message:
+            return message
+
+        text = " ".join(
+            message.strip().split()
+        )
+
+        # =================================================
+        # PATTERN 1
+        #
+        # On YouTube, search for Python tutorials
+        # On YouTube search for Python tutorials
+        # =================================================
+
+        match = re.match(
+            r"^\s*(?:on|in)\s+"
+            r"(.+?)"
+            r"\s*,?\s+"
+            r"search\s+(?:for\s+)?"
+            r"(.+?)"
+            r"\s*[.!?]*\s*$",
+            text,
+            flags=re.IGNORECASE
+        )
+
+        if match:
+            site = match.group(1).strip()
+            query = match.group(2).strip()
+
+            url = self._resolve_website_url(
+                site
+            )
+
+            if url and query:
+                return (
+                    f"Open {site} and "
+                    f"Fill search box with {query} and "
+                    f"Press ENTER"
+                )
+
+        # =================================================
+        # PATTERN 2
+        #
+        # Search YouTube for Python tutorials
+        # =================================================
+
+        match = re.match(
+            r"^\s*search\s+"
+            r"(.+?)"
+            r"\s+for\s+"
+            r"(.+?)"
+            r"\s*[.!?]*\s*$",
+            text,
+            flags=re.IGNORECASE
+        )
+
+        if match:
+            site = match.group(1).strip()
+            query = match.group(2).strip()
+
+            url = self._resolve_website_url(
+                site
+            )
+
+            if url and query:
+                return (
+                    f"Open {site}. "
+                    f"Fill search box with {query}. "
+                    f"Press ENTER"
+                )
+
+        # =================================================
+        # PATTERN 3
+        #
+        # Search Python tutorials on YouTube
+        # =================================================
+
+        match = re.match(
+            r"^\s*search\s+"
+            r"(?:for\s+)?"
+            r"(.+?)"
+            r"\s+on\s+"
+            r"(.+?)"
+            r"\s*[.!?]*\s*$",
+            text,
+            flags=re.IGNORECASE
+        )
+
+        if match:
+            query = match.group(1).strip()
+            site = match.group(2).strip()
+
+            url = self._resolve_website_url(
+                site
+            )
+
+            if url and query:
+                return (
+                    f"Open {site}. "
+                    f"Fill search box with {query}. "
+                    f"Press ENTER"
+                )
+
+        # =================================================
+        # No site-scoped search detected
+        # =================================================
+
+        return text
 
     # =====================================================
     # RESOLVE WEBSITE URL
     # =====================================================
 
-    def _resolve_website_url(self, target: str):
+    def _resolve_website_url(
+        self,
+        target: str
+    ):
 
         if not target:
             return None
 
         value = target.strip()
+
+        # -------------------------------------------------
+        # Remove common natural-language prefixes
+        # -------------------------------------------------
 
         value = re.sub(
             r"^(the\s+)?website\s+",
@@ -320,6 +581,10 @@ class ActionPlanner:
             value,
             flags=re.IGNORECASE
         ).strip()
+
+        # -------------------------------------------------
+        # Already a full URL
+        # -------------------------------------------------
 
         if re.match(
             r"^https?://",
@@ -329,9 +594,17 @@ class ActionPlanner:
 
             return value
 
+        # -------------------------------------------------
+        # www.example.com
+        # -------------------------------------------------
+
         if value.lower().startswith("www."):
 
             return "https://" + value
+
+        # -------------------------------------------------
+        # Known websites
+        # -------------------------------------------------
 
         websites = {
 
@@ -445,7 +718,20 @@ class ActionPlanner:
 
         if normalized in websites:
 
-            return websites[normalized]
+            return websites[
+                normalized
+            ]
+
+        # -------------------------------------------------
+        # Domain-like target
+        #
+        # Example:
+        #
+        # python.org
+        # example.com
+        # docs.python.org
+        #
+        # -------------------------------------------------
 
         if re.match(
             r"^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+$",
@@ -453,6 +739,16 @@ class ActionPlanner:
         ):
 
             return "https://" + value
+
+        # -------------------------------------------------
+        # Natural-language website names
+        #
+        # Example:
+        #
+        # Google website
+        # YouTube website
+        #
+        # -------------------------------------------------
 
         cleaned = re.sub(
             r"\s+website$",
@@ -463,7 +759,13 @@ class ActionPlanner:
 
         if cleaned in websites:
 
-            return websites[cleaned]
+            return websites[
+                cleaned
+            ]
+
+        # -------------------------------------------------
+        # Not recognized
+        # -------------------------------------------------
 
         return None
 
@@ -471,7 +773,10 @@ class ActionPlanner:
     # SPLIT COMMANDS
     # =====================================================
 
-    def _split_commands(self, message: str):
+    def _split_commands(
+        self,
+        message: str
+    ):
 
         text = " ".join(
             message.strip().split()
@@ -480,15 +785,32 @@ class ActionPlanner:
         if not text:
             return []
 
-        # IMPORTANT:
-        # FIND is now a supported command.
+        # -----------------------------------------------------
+        # Supported command boundaries
+        # -----------------------------------------------------
+
         command_start = (
-            r"(?:search|click|open|find|go\s+to|goto|"
-            r"navigate\s+to|read(?:\s+(?:the\s+)?)?page|"
-            r"read|fill|press)"
+            r"(?:"
+            r"search|"
+            r"click|"
+            r"open|"
+            r"go\s+to|"
+            r"goto|"
+            r"navigate\s+to|"
+            r"read(?:\s+(?:the\s+)?)?page|"
+            r"read|"
+            r"fill|"
+            r"press"
+            r")"
         )
 
-        # Normalize comma/semicolon before commands.
+        # -----------------------------------------------------
+        # Normalize:
+        #
+        # ", and search"
+        # ", search"
+        # -----------------------------------------------------
+
         text = re.sub(
             rf"[,;]+\s+and\s+(?={command_start}\b)",
             " and ",
@@ -503,7 +825,10 @@ class ActionPlanner:
             flags=re.IGNORECASE
         )
 
-        # Explicit THEN.
+        # -----------------------------------------------------
+        # Explicit THEN
+        # -----------------------------------------------------
+
         parts = re.split(
             r"\s+then\s+",
             text,
@@ -518,6 +843,10 @@ class ActionPlanner:
 
             if not part:
                 continue
+
+            # -------------------------------------------------
+            # "and <supported command>" boundaries
+            # -------------------------------------------------
 
             boundary = (
                 rf"\s+and\s+(?="
@@ -552,7 +881,10 @@ class ActionPlanner:
                 ).strip()
 
                 if piece:
-                    final_parts.append(piece)
+
+                    final_parts.append(
+                        piece
+                    )
 
         return final_parts
 

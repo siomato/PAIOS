@@ -1354,14 +1354,12 @@ class BrowserAutomation:
     def press_key(self, key: str):
 
         if not key:
-
             return (
                 "Press failed: "
                 "key cannot be empty."
             )
 
         try:
-
             page = self.start()
 
             print(
@@ -1370,22 +1368,61 @@ class BrowserAutomation:
 
             before_url = page.url
 
+            # -------------------------------------------------
+            # Normalize human-friendly key names to Playwright
+            # key names. Playwright is case-sensitive for names
+            # such as Enter, Escape, ArrowUp, etc.
+            # -------------------------------------------------
+            key_map = {
+                "enter": "Enter",
+                "return": "Enter",
+                "esc": "Escape",
+                "escape": "Escape",
+                "tab": "Tab",
+                "backspace": "Backspace",
+                "delete": "Delete",
+                "space": "Space",
+                "up": "ArrowUp",
+                "down": "ArrowDown",
+                "left": "ArrowLeft",
+                "right": "ArrowRight",
+                "home": "Home",
+                "end": "End",
+                "pageup": "PageUp",
+                "pagedown": "PageDown",
+            }
+
+            normalized_key = str(key).strip()
+
+            normalized_key = key_map.get(
+                normalized_key.casefold(),
+                normalized_key
+            )
+
+            print(
+                f"⌨️ Normalized key: {normalized_key}"
+            )
+
+            # IMPORTANT:
+            # Press ONLY the normalized key.
+            # The previous implementation pressed normalized_key and
+            # then pressed the original key again. For input such as
+            # ENTER, the first press succeeded as Enter, but the second
+            # raw press failed with: Unknown key: "ENTER".
             page.keyboard.press(
-                key
+                normalized_key
             )
 
             # -------------------------------------------------
             # Navigation synchronization for Enter
             # -------------------------------------------------
-
-            if key.casefold() == "enter":
+            if normalized_key == "Enter":
 
                 print(
                     "⏳ Checking for navigation..."
                 )
 
                 try:
-
                     page.wait_for_function(
                         """
                         (beforeUrl) => {
@@ -1401,30 +1438,24 @@ class BrowserAutomation:
                     )
 
                 except Exception:
-
                     print(
                         "ℹ️ No URL change detected."
                     )
 
                 try:
-
                     page.wait_for_load_state(
                         "domcontentloaded",
                         timeout=10000
                     )
-
                 except Exception:
-
                     print(
                         "ℹ️ DOMContentLoaded wait timed out."
                     )
 
                 try:
-
                     page.wait_for_timeout(
                         300
                     )
-
                 except Exception:
                     pass
 
@@ -1433,20 +1464,17 @@ class BrowserAutomation:
                 )
 
                 try:
-
                     print(
                         f"📄 Final title: {page.title()}"
                     )
-
                 except Exception:
                     pass
 
             return (
-                f"Pressed {key}"
+                f"Pressed {normalized_key}"
             )
 
         except Exception as e:
-
             return (
                 f"Press failed: {e}"
             )

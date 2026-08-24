@@ -175,7 +175,9 @@ class BrowserEngine:
                 ""
             )
 
-            command = command.strip()
+            command = str(
+                command
+            ).strip()
 
             if not command:
 
@@ -187,8 +189,62 @@ class BrowserEngine:
                 f"⌨️ Fill request: {command}"
             )
 
+            fill_command = command
+
+            if fill_command.lower().startswith("fill "):
+                fill_command = (
+                    fill_command[5:].strip()
+                )
+
+            separator = " with "
+            separator_index = (
+                fill_command.lower().find(
+                    separator
+                )
+            )
+
+            if separator_index == -1:
+
+                raise ValueError(
+                    "Invalid fill command. "
+                    "Expected '<target> with <text>'. "
+                    f"Received: {command}"
+                )
+
+            target = fill_command[
+                :separator_index
+            ].strip()
+
+            text = fill_command[
+                separator_index + len(separator):
+            ].strip()
+
+            if target.lower().startswith("the "):
+                target = target[4:].strip()
+
+            if not target:
+
+                raise ValueError(
+                    "Fill target could not be determined."
+                )
+
+            if not text:
+
+                raise ValueError(
+                    "Fill text could not be determined."
+                )
+
+            print(
+                f"🎯 Fill target: {target}"
+            )
+
+            print(
+                f"📝 Fill text: {text}"
+            )
+
             return browser_tools.fill_from_command(
-                command
+                target,
+                text
             )
 
         # =================================================

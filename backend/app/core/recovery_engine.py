@@ -31,7 +31,6 @@ class RecoveryEngine:
     # ========================================================
 
     def __init__(self):
-
         print(
             "🛡️ RECOVERY ENGINE MODULE LOADED 🛡️"
         )
@@ -46,12 +45,10 @@ class RecoveryEngine:
         attribute,
         value
     ):
-
         if state is None:
             return
 
         try:
-
             setter = getattr(
                 state,
                 f"set_{attribute}",
@@ -59,18 +56,13 @@ class RecoveryEngine:
             )
 
             if callable(setter):
-
-                setter(
-                    value
-                )
-
+                setter(value)
                 return
 
         except Exception:
             pass
 
         try:
-
             setattr(
                 state,
                 attribute,
@@ -86,23 +78,17 @@ class RecoveryEngine:
         self,
         state
     ):
-
         if state is None:
             return
 
         try:
-
             current = getattr(
                 state,
                 "retries",
                 0
             )
 
-            if isinstance(
-                current,
-                int
-            ):
-
+            if isinstance(current, int):
                 setattr(
                     state,
                     "retries",
@@ -118,27 +104,35 @@ class RecoveryEngine:
         self,
         state
     ):
-
         if state is None:
             return
 
         try:
-
             current = getattr(
                 state,
                 "replans",
                 0
             )
 
-            if isinstance(
-                current,
-                int
-            ):
-
+            if isinstance(current, int):
                 setattr(
                     state,
                     "replans",
                     current + 1
+                )
+
+            # AgentState may use replans_used instead.
+            current_used = getattr(
+                state,
+                "replans_used",
+                None
+            )
+
+            if isinstance(current_used, int):
+                setattr(
+                    state,
+                    "replans_used",
+                    current_used + 1
                 )
 
         except Exception:
@@ -151,7 +145,6 @@ class RecoveryEngine:
         state,
         step
     ):
-
         self._set_state(
             state,
             "current_step",
@@ -165,7 +158,6 @@ class RecoveryEngine:
         state,
         step
     ):
-
         self._set_state(
             state,
             "failed_step",
@@ -180,12 +172,10 @@ class RecoveryEngine:
         self,
         result
     ):
-
         if not isinstance(
             result,
             dict
         ):
-
             return "unknown"
 
         error = str(
@@ -196,46 +186,30 @@ class RecoveryEngine:
         ).lower()
 
         # ----------------------------------------------------
-        # THREAD / PLAYWRIGHT ERRORS
+        # BROWSER / PLAYWRIGHT / THREAD
         # ----------------------------------------------------
 
         browser_errors = (
-
             "browser",
-
             "playwright",
-
             "page",
-
             "context",
-
             "target page",
-
             "session",
-
             "closed",
-
             "connection",
-
             "cannot switch to a different thread",
-
             "different thread",
-
             "thread",
-
             "sync_api",
-
             "event loop",
-
             "greenlet",
-
         )
 
         if any(
             word in error
             for word in browser_errors
         ):
-
             return "browser"
 
         # ----------------------------------------------------
@@ -243,28 +217,19 @@ class RecoveryEngine:
         # ----------------------------------------------------
 
         target_errors = (
-
             "target",
-
             "element",
-
             "locator",
-
             "resolve",
-
             "not found",
-
             "could not resolve",
-
             "button not found",
-
         )
 
         if any(
             word in error
             for word in target_errors
         ):
-
             return "target"
 
         # ----------------------------------------------------
@@ -276,7 +241,6 @@ class RecoveryEngine:
             or
             "timed out" in error
         ):
-
             return "timeout"
 
         # ----------------------------------------------------
@@ -284,38 +248,30 @@ class RecoveryEngine:
         # ----------------------------------------------------
 
         network_errors = (
-
             "network",
-
             "navigation",
-
             "net::",
-
             "dns",
-
             "connection refused",
-
             "connection reset",
-
         )
 
         if any(
             word in error
             for word in network_errors
         ):
-
             return "network"
 
         # ----------------------------------------------------
         # UNKNOWN ACTION
         # ----------------------------------------------------
 
-        if "unknown action" in error or "unsupported action" in error:
+        if (
+            "unknown action" in error
+            or
+            "unsupported action" in error
+        ):
             return "action"
-
-        # ----------------------------------------------------
-        # UNKNOWN
-        # ----------------------------------------------------
 
         return "unknown"
 
@@ -327,24 +283,20 @@ class RecoveryEngine:
         self,
         result
     ):
-
         if not isinstance(
             result,
             dict
         ):
-
             return True
 
         if result.get(
             "status"
         ) == "success":
-
             return False
 
         if result.get(
             "recoverable"
         ) is False:
-
             return False
 
         return True
@@ -369,15 +321,6 @@ class RecoveryEngine:
 
         try:
 
-            # ------------------------------------------------
-            # IMPORTANT:
-            #
-            # BrowserAutomation owns Playwright objects.
-            #
-            # Therefore cleanup itself is executed through
-            # BrowserWorker.
-            # ------------------------------------------------
-
             result = browser_worker.execute(
                 browser_automation.close
             )
@@ -398,12 +341,7 @@ class RecoveryEngine:
                 f"⚠️ Browser cleanup failed: {e}"
             )
 
-            # ------------------------------------------------
             # Emergency cleanup.
-            #
-            # This should normally never be required.
-            # ------------------------------------------------
-
             try:
 
                 browser_automation._cleanup()
@@ -444,9 +382,9 @@ class RecoveryEngine:
             f"Recovery type: {error_type}"
         )
 
-        # ====================================================
-        # BROWSER / PLAYWRIGHT
-        # ====================================================
+        # ----------------------------------------------------
+        # BROWSER
+        # ----------------------------------------------------
 
         if error_type == "browser":
 
@@ -476,9 +414,9 @@ class RecoveryEngine:
 
             return True
 
-        # ====================================================
+        # ----------------------------------------------------
         # TARGET
-        # ====================================================
+        # ----------------------------------------------------
 
         if error_type == "target":
 
@@ -488,9 +426,9 @@ class RecoveryEngine:
 
             return True
 
-        # ====================================================
+        # ----------------------------------------------------
         # TIMEOUT
-        # ====================================================
+        # ----------------------------------------------------
 
         if error_type == "timeout":
 
@@ -500,9 +438,9 @@ class RecoveryEngine:
 
             return True
 
-        # ====================================================
+        # ----------------------------------------------------
         # NETWORK
-        # ====================================================
+        # ----------------------------------------------------
 
         if error_type == "network":
 
@@ -512,9 +450,9 @@ class RecoveryEngine:
 
             return True
 
-        # ====================================================
+        # ----------------------------------------------------
         # ACTION
-        # ====================================================
+        # ----------------------------------------------------
 
         if error_type == "action":
 
@@ -525,9 +463,9 @@ class RecoveryEngine:
 
             return True
 
-        # ====================================================
+        # ----------------------------------------------------
         # UNKNOWN
-        # ====================================================
+        # ----------------------------------------------------
 
         print(
             "❓ Unknown failure type; allowing Replanner "
@@ -541,7 +479,6 @@ class RecoveryEngine:
     # ========================================================
 
     def _wait(self):
-
         time.sleep(
             self.RETRY_DELAY
         )
@@ -559,10 +496,15 @@ class RecoveryEngine:
     ):
 
         if max_retries is None:
+            max_retries = self.MAX_RETRIES
 
-            max_retries = (
-                self.MAX_RETRIES
+        try:
+            max_retries = max(
+                0,
+                int(max_retries)
             )
+        except Exception:
+            max_retries = self.MAX_RETRIES
 
         print(
             "\n========== RECOVERY EXECUTOR =========="
@@ -573,14 +515,8 @@ class RecoveryEngine:
         )
 
         attempts = 0
-
         recovery_history = []
-
         last_result = None
-
-        # ====================================================
-        # CURRENT STEP
-        # ====================================================
 
         if step_number is not None:
 
@@ -589,9 +525,9 @@ class RecoveryEngine:
                 step_number
             )
 
-        # ====================================================
+        # ----------------------------------------------------
         # ATTEMPT LOOP
-        # ====================================================
+        # ----------------------------------------------------
 
         while attempts <= max_retries:
 
@@ -617,8 +553,7 @@ class RecoveryEngine:
 
             except TypeError:
 
-                # Compatibility with older executor
-
+                # Compatibility with older executor.
                 try:
 
                     result = (
@@ -646,7 +581,7 @@ class RecoveryEngine:
                 }
 
             # ------------------------------------------------
-            # Safety normalization
+            # SAFETY NORMALIZATION
             # ------------------------------------------------
 
             if not isinstance(
@@ -678,20 +613,14 @@ class RecoveryEngine:
 
                 return {
                     "status": "success",
-
                     "action": action,
-
                     "attempts": attempts,
-
                     "recovered":
                         attempts > 1,
-
                     "recovery_history":
                         recovery_history,
-
                     "result":
                         result,
-
                     "error": None
                 }
 
@@ -707,21 +636,18 @@ class RecoveryEngine:
 
             error_message = (
                 result.get(
-                    "error"
+                    "error",
+                    "Unknown action failure."
                 )
             )
 
             recovery_history.append({
-
                 "attempt":
                     attempts,
-
                 "error":
                     error_message,
-
                 "error_type":
                     error_type
-
             })
 
             print(
@@ -764,19 +690,13 @@ class RecoveryEngine:
 
                 return {
                     "status": "failed",
-
                     "action": action,
-
                     "attempts": attempts,
-
                     "recovered": False,
-
                     "recovery_history":
                         recovery_history,
-
                     "result":
                         result,
-
                     "error":
                         error_message
                 }
@@ -786,7 +706,6 @@ class RecoveryEngine:
             # =================================================
 
             if attempts > max_retries:
-
                 break
 
             # =================================================
@@ -833,25 +752,19 @@ class RecoveryEngine:
         )
 
         return {
-
             "status": "failed",
-
             "action": action,
-
             "attempts": attempts,
-
             "recovered": False,
-
             "recovery_history":
                 recovery_history,
-
             "result":
                 last_result,
-
             "error":
                 (
                     last_result.get(
-                        "error"
+                        "error",
+                        "Unknown error"
                     )
                     if last_result
                     else
@@ -924,6 +837,9 @@ class RecoveryEngine:
                 "steps": []
             }
 
+        # IMPORTANT:
+        # Replanning succeeds ONLY when the replanner
+        # explicitly returns status == "success".
         if replan_result.get(
             "status"
         ) != "success":
@@ -945,7 +861,10 @@ class RecoveryEngine:
             )
         )
 
-        if not new_steps:
+        if not isinstance(
+            new_steps,
+            list
+        ) or not new_steps:
 
             return {
                 "status": "failed",
@@ -977,17 +896,13 @@ class RecoveryEngine:
             )
 
         return {
-
             "status": "success",
-
             "reason":
                 replan_result.get(
                     "reason"
                 ),
-
             "steps":
                 new_steps,
-
             "failed_step":
                 failed_step
         }
@@ -1019,7 +934,10 @@ class RecoveryEngine:
         # VALIDATE PLAN
         # ====================================================
 
-        if not steps:
+        if not isinstance(
+            steps,
+            list
+        ) or not steps:
 
             self._set_state(
                 state,
@@ -1028,18 +946,12 @@ class RecoveryEngine:
             )
 
             return {
-
                 "status": "failed",
-
                 "steps": [],
-
                 "failed_step": None,
-
                 "error":
                     "No actions to execute.",
-
                 "replans_used": 0,
-
                 "replan_history": []
             }
 
@@ -1078,6 +990,10 @@ class RecoveryEngine:
 
         # ====================================================
         # PLAN LOOP
+        #
+        # IMPORTANT:
+        # This is bounded by MAX_REPLANS.
+        # There is no infinite recovery loop.
         # ====================================================
 
         while True:
@@ -1094,6 +1010,8 @@ class RecoveryEngine:
             )
 
             plan_failed = False
+            failed_step = None
+            failure = None
 
             # =================================================
             # STEP LOOP
@@ -1129,21 +1047,16 @@ class RecoveryEngine:
                 )
 
                 results.append({
-
                     "step":
                         index,
-
                     "action":
                         action,
-
                     "status":
                         result.get(
                             "status"
                         ),
-
                     "result":
                         result
-
                 })
 
                 # ---------------------------------------------
@@ -1219,7 +1132,6 @@ class RecoveryEngine:
                 )
 
                 return {
-
                     "status":
                         "success",
 
@@ -1261,7 +1173,6 @@ class RecoveryEngine:
                 )
 
                 return {
-
                     "status":
                         "failed",
 
@@ -1302,7 +1213,6 @@ class RecoveryEngine:
             )
 
             replan_history.append({
-
                 "replan_attempt":
                     replans_used + 1,
 
@@ -1314,7 +1224,6 @@ class RecoveryEngine:
 
                 "result":
                     replan_result
-
             })
 
             # =================================================
@@ -1336,7 +1245,6 @@ class RecoveryEngine:
                 )
 
                 return {
-
                     "status":
                         "failed",
 
@@ -1348,7 +1256,8 @@ class RecoveryEngine:
 
                     "error":
                         replan_result.get(
-                            "error"
+                            "error",
+                            "Replanning failed."
                         ),
 
                     "replans_used":
@@ -1384,7 +1293,6 @@ class RecoveryEngine:
                 )
 
                 return {
-
                     "status":
                         "failed",
 
@@ -1426,9 +1334,10 @@ class RecoveryEngine:
                 "executing"
             )
 
-            # ------------------------------------------------
-            # Continue with new plan
-            # ------------------------------------------------
+            # Continue with the new plan.
+            #
+            # The MAX_REPLANS guard above guarantees
+            # that this loop cannot continue forever.
 
 
 # ============================================================

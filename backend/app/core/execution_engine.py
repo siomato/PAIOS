@@ -314,27 +314,44 @@ class ExecutionEngine:
                     "\n♻️ Recovery succeeded."
                 )
 
-                # ---------------------------------------------
-                # Remove the successfully recovered step
-                # and continue with remaining steps.
+                                # ---------------------------------------------
+                # Recovery successfully handled the failed action.
+                #
+                # The failed step is now complete, so remove it
+                # from the plan and continue with everything after it.
                 # ---------------------------------------------
 
+                next_index = failed_step
+
                 remaining_steps = current_plan[
-                    failed_step:
+                    next_index:
                 ]
+
+                # -------------------------------------------------
+                # No remaining work means the entire objective is
+                # complete.
+                # -------------------------------------------------
 
                 if not remaining_steps:
 
                     print(
-                        "\n🎉 No remaining steps."
+                        "\n🎉 Recovery completed the final step."
                     )
 
                     return {
                         "status": "success",
                         "results": execution_history,
                         "replans_used": self.replans_used,
-                        "final_plan": current_plan
+                        "final_plan": []
                     }
+
+                # -------------------------------------------------
+                # Continue with the remaining plan.
+                #
+                # IMPORTANT:
+                # failed_step is relative to the OLD plan.
+                # The new current_plan starts at index 1 again.
+                # -------------------------------------------------
 
                 current_plan = list(
                     remaining_steps
@@ -342,6 +359,11 @@ class ExecutionEngine:
 
                 print(
                     "\n▶️ Continuing with remaining steps..."
+                )
+
+                print(
+                    f"Remaining steps: "
+                    f"{len(current_plan)}"
                 )
 
                 continue
