@@ -1,0 +1,7 @@
+playwright
+pyautogui
+requests
+fastapi
+uvicorn
+python-dotenv
+pydantic

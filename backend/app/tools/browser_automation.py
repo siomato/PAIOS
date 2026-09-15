@@ -1,912 +1,1026 @@
-from urllib.parse import quote_plus, urljoin
+"""
+PAIOS Browser Automation Engine
 
-from playwright.sync_api import sync_playwright
+Features:
+- Playwright browser control
+- Global web search
+- Context-aware website search
+- YouTube search
+- GitHub search
+- Reddit search
+- Stack Overflow search
+- Amazon search
+- Google/Bing/DuckDuckGo search
+- URL navigation
+- Click
+- Fill / type
+- Keyboard actions
+- Hover
+- Select
+- Check / uncheck
+- Scrolling
+- Back / forward / reload
+- Browser tabs
+- Screenshots
+- Page reading
+- Element discovery
+- Search-result extraction
+- Site shortcuts
+- Access-control integration
+"""
 
+from __future__ import annotations
 
-print("🔥 BROWSER AUTOMATION MODULE LOADED 🔥")
+import re
+import time
+
+from pathlib import Path
+from urllib.parse import quote_plus, urlparse, urljoin
+
+from app.tools.browser_worker import browser_worker
+from app.security.access_control import access_controller
+
+try:
+    from playwright.sync_api import sync_playwright
+except Exception:
+    sync_playwright = None
 
 
 class BrowserAutomation:
 
-    # =========================================================
-    # INIT
-    # =========================================================
+    # ================================================================
+    # KNOWN WEBSITE SEARCH URLS
+    # ================================================================
+
+    SITE_SEARCH_URLS = {
+        "youtube.com":
+            "https://www.youtube.com/results?search_query={query}",
+
+        "youtu.be":
+            "https://www.youtube.com/results?search_query={query}",
+
+        "github.com":
+            "https://github.com/search?q={query}",
+
+        "reddit.com":
+            "https://www.reddit.com/search/?q={query}",
+
+        "stackoverflow.com":
+            "https://stackoverflow.com/search?q={query}",
+
+        "stackexchange.com":
+            "https://stackexchange.com/search?q={query}",
+
+        "amazon.com":
+            "https://www.amazon.com/s?k={query}",
+
+        "amazon.in":
+            "https://www.amazon.in/s?k={query}",
+
+        "google.com":
+            "https://www.google.com/search?q={query}",
+
+        "bing.com":
+            "https://www.bing.com/search?q={query}",
+
+        "duckduckgo.com":
+            "https://duckduckgo.com/?q={query}",
+
+        "python.org":
+            "https://www.python.org/search/?q={query}",
+
+        "wikipedia.org":
+            "https://www.wikipedia.org/w/index.php?search={query}",
+
+        "npmjs.com":
+            "https://www.npmjs.com/search?q={query}",
+    }
+
+    # ================================================================
+    # CONSTRUCTOR
+    # ================================================================
 
     def __init__(self):
 
-        self.playwright = None
+        self.pw = None
         self.browser = None
         self.context = None
         self.page = None
 
-        # -----------------------------------------------------
         # Search state
-        # -----------------------------------------------------
-
         self.search_results = []
-
         self.last_search_query = ""
-
         self.last_search_engine = ""
+        self.last_search_scope = ""
 
-    # =========================================================
-    # SESSION CHECK
-    # =========================================================
+        # Browser state
+        self.last_url = ""
+        self.last_title = ""
 
-    def _session_alive(self):
-
-        try:
-
-            return (
-                self.playwright is not None
-                and self.browser is not None
-                and self.browser.is_connected()
-                and self.context is not None
-                and self.page is not None
-                and not self.page.is_closed()
-            )
-
-        except Exception:
-
-            return False
-
-    # =========================================================
-    # PAGE CONTRACT CHECK
-    # =========================================================
-
-    def _is_valid_page(self, page):
-        """
-        Verify that the object is a real Playwright Page.
-
-        BrowserAutomation.start() has one strict contract:
-        it ALWAYS returns a Playwright Page object.
-        """
-
-        if page is None:
-            return False
-
-        if isinstance(page, dict):
-            return False
-
-        required_methods = (
-            "goto",
-            "locator",
-            "title",
-            "is_closed",
-        )
-
-        for method_name in required_methods:
-
-            if not callable(
-                getattr(
-                    page,
-                    method_name,
-                    None
-                )
-            ):
-                return False
-
-        try:
-            page.is_closed()
-        except Exception:
-            return False
-
-        return True
-
-    # =========================================================
-    # START BROWSER
-    # =========================================================
+    # ================================================================
+    # BROWSER START
+    # ================================================================
 
     def start(self):
-        """
-        Start or reuse the browser session.
 
-        STRICT CONTRACT:
-        This method ALWAYS returns a Playwright Page.
-        It must never return a dictionary or application result.
-        """
+        # Browser already running
+        if self.page and not self.page.is_closed():
+            return self.page
 
-        # -----------------------------------------------------
-        # Reuse existing browser
-        # -----------------------------------------------------
-
-        if self._session_alive():
-
-            if self._is_valid_page(
-                self.page
-            ):
-                return self.page
-
-            print(
-                "⚠️ Invalid browser page object detected."
-            )
-
-            self._cleanup()
-
-        # -----------------------------------------------------
-        # Remove stale session
-        # -----------------------------------------------------
-
-        self._cleanup()
-
-        print(
-            "🌐 Starting fresh Playwright session..."
-        )
-
-        # -----------------------------------------------------
-        # Start Playwright
-        # -----------------------------------------------------
-
-        self.playwright = (
-            sync_playwright().start()
-        )
-
-        # -----------------------------------------------------
-        # Launch Chromium
-        # -----------------------------------------------------
-
-        self.browser = (
-            self.playwright.chromium.launch(
-                headless=False
-            )
-        )
-
-        # -----------------------------------------------------
-        # Create browser context
-        # -----------------------------------------------------
-
-        self.context = (
-            self.browser.new_context(
-                viewport={
-                    "width": 1366,
-                    "height": 768
-                }
-            )
-        )
-
-        # -----------------------------------------------------
-        # Create page
-        # -----------------------------------------------------
-
-        self.page = (
-            self.context.new_page()
-        )
-
-        # -----------------------------------------------------
-        # STRICT CONTRACT CHECK
-        # -----------------------------------------------------
-
-        if not self._is_valid_page(
-            self.page
-        ):
-
-            print(
-                "❌ BrowserAutomation.start() created "
-                "an invalid page object."
-            )
-
-            self._cleanup()
-
+        if sync_playwright is None:
             raise RuntimeError(
-                "BrowserAutomation.start() must return "
-                "a Playwright Page."
+                "Playwright is not installed. "
+                "Run: pip install playwright"
             )
 
-        print(
-            "✅ Browser session ready."
+        # Start Playwright
+        self.pw = sync_playwright().start()
+
+        # Launch Chromium
+        self.browser = self.pw.chromium.launch(
+            headless=False
         )
 
-        print(
-            "✅ BrowserAutomation.start() contract verified: "
-            "Playwright Page."
+        # Browser context
+        self.context = self.browser.new_context(
+            accept_downloads=True,
+            viewport={
+                "width": 1440,
+                "height": 900,
+            },
         )
+
+        # First tab
+        self.page = self.context.new_page()
 
         return self.page
 
-    # =========================================================
-    # BROWSER STATE
-    # =========================================================
+    # ================================================================
+    # TELEMETRY
+    # ================================================================
 
-    def get_browser_state(self):
-        """
-        Return browser telemetry as plain Python data.
+    def _telemetry(self):
 
-        Playwright objects remain inside BrowserAutomation.
-        Only normal Python values are returned.
-        """
+        page = self.start()
 
         try:
+            title = page.title()
+        except Exception:
+            title = ""
 
-            page = self.start()
+        self.last_url = page.url
+        self.last_title = title
 
-            current_url = None
-            page_title = None
+        return {
+            "current_url": page.url,
+            "page_title": title,
+        }
 
-            try:
-                current_url = page.url
-            except Exception:
-                pass
+    # ================================================================
+    # URL NORMALIZATION
+    # ================================================================
 
-            try:
-                page_title = page.title()
-            except Exception:
-                pass
+    def _normalize_url(self, url):
 
-            return {
-                "current_url": current_url,
-                "page_title": page_title,
-                "error": None
-            }
-
-        except Exception as e:
-
-            print(
-                f"⚠️ Browser state failed: {e}"
-            )
-
-            return {
-                "current_url": None,
-                "page_title": None,
-                "error": str(e)
-            }
-
-    # =========================================================
-    # OPEN URL
-    # =========================================================
-
-    def open_url(self, url: str):
+        url = str(url).strip()
 
         if not url:
-
-            return (
-                "Browser error: URL cannot be empty."
+            raise ValueError(
+                "URL cannot be empty"
             )
+
+        # Already has protocol
+        if re.match(
+            r"^https?://",
+            url,
+            re.IGNORECASE,
+        ):
+            return url
+
+        # Add HTTPS
+        return "https://" + url
+
+    # ================================================================
+    # OPEN URL
+    # ================================================================
+
+    def open_url(self, url):
+
+        url = self._normalize_url(url)
+
+        access_controller.authorize_url(url)
+
+        page = self.start()
+
+        page.goto(
+            url,
+            wait_until="domcontentloaded",
+            timeout=30000,
+        )
+
+        self.last_url = page.url
 
         try:
+            self.last_title = page.title()
+        except Exception:
+            self.last_title = ""
 
-            page = self.start()
+        return {
+            "status": "success",
+            "action": "open_url",
+            "url": page.url,
+            "title": self.last_title,
+        }
 
-            print(
-                f"🌐 Opening: {url}"
-            )
+    # ================================================================
+    # CURRENT DOMAIN
+    # ================================================================
 
-            page.goto(
-                url,
-                wait_until="domcontentloaded",
-                timeout=30000
-            )
+    def _current_domain(self):
 
-            print(
-                f"✅ Opened: {page.url}"
-            )
-
-            return (
-                f"Opened {page.url}"
-            )
-
-        except Exception as e:
-
-            print(
-                f"❌ Open URL failed: {e}"
-            )
-
-            return (
-                f"Browser error: {e}"
-            )
-
-    # =========================================================
-    # GOOGLE SEARCH
-    # =========================================================
-
-    def google_search(self, query: str):
-
-        query = query.strip()
-
-        if not query:
-
-            self.search_results = []
-
-            return (
-                "Google search failed: "
-                "empty query."
-            )
+        page = self.start()
 
         try:
+            host = urlparse(
+                page.url
+            ).netloc.lower()
+        except Exception:
+            return ""
 
-            page = self.start()
+        if host.startswith("www."):
+            host = host[4:]
 
-            print(
-                f"🔎 Searching Google for: {query}"
-            )
+        return host
 
-            # -------------------------------------------------
-            # Reset search state
-            # -------------------------------------------------
+    # ================================================================
+    # CHECK WHETHER DOMAIN MATCHES
+    # ================================================================
 
-            self.search_results = []
+    def _domain_matches(self, host, domain):
 
-            self.last_search_query = query
-            self.last_search_engine = "google"
+        host = host.lower().strip()
+        domain = domain.lower().strip()
 
-            # -------------------------------------------------
-            # Open Google
-            # -------------------------------------------------
+        if host.startswith("www."):
+            host = host[4:]
 
-            encoded_query = quote_plus(query)
-
-            google_url = (
-                "https://www.google.com/search?q="
-                + encoded_query
-            )
-
-            page.goto(
-                google_url,
-                wait_until="domcontentloaded",
-                timeout=30000
-            )
-
-            # -------------------------------------------------
-            # Detect Google block
-            # -------------------------------------------------
-
-            if "/sorry/" in page.url:
-
-                print(
-                    "⚠️ Google blocked the automated "
-                    "search request."
-                )
-
-                return (
-                    "Google unavailable."
-                )
-
-            # -------------------------------------------------
-            # Wait for Google result
-            # -------------------------------------------------
-
-            try:
-
-                page.locator(
-                    "a:has(h3)"
-                ).first.wait_for(
-                    state="visible",
-                    timeout=10000
-                )
-
-            except Exception:
-
-                print(
-                    "⚠️ Google result links "
-                    "were not detected."
-                )
-
-                return (
-                    "Google unavailable."
-                )
-
-            # -------------------------------------------------
-            # Extract results
-            # -------------------------------------------------
-
-            self.search_results = (
-                self._extract_search_results(
-                    engine="google"
-                )
-            )
-
-            print(
-                f"📋 Structured Google results: "
-                f"{len(self.search_results)}"
-            )
-
-            if not self.search_results:
-
-                print(
-                    "⚠️ Google produced no "
-                    "usable search results."
-                )
-
-                return (
-                    "Google unavailable."
-                )
-
-            # -------------------------------------------------
-            # Display results
-            # -------------------------------------------------
-
-            self._print_search_results()
-
-            print(
-                "✅ Google search results loaded."
-            )
-
-            return (
-                f"Searching Google for "
-                f"'{query}'. "
-                f"Found {len(self.search_results)} results."
-            )
-
-        except Exception as e:
-
-            self.search_results = []
-
-            print(
-                f"❌ Google search failed: {e}"
-            )
-
-            return (
-                "Google unavailable."
-            )
-
-    # =========================================================
-    # DUCKDUCKGO SEARCH
-    # =========================================================
-
-    def duckduckgo_search(self, query: str):
-
-        query = query.strip()
-
-        if not query:
-
-            self.search_results = []
-
-            return (
-                "DuckDuckGo search failed: "
-                "empty query."
-            )
-
-        try:
-
-            page = self.start()
-
-            print(
-                f"🔎 Searching DuckDuckGo for: {query}"
-            )
-
-            # -------------------------------------------------
-            # Reset state
-            # -------------------------------------------------
-
-            self.search_results = []
-
-            self.last_search_query = query
-            self.last_search_engine = "duckduckgo"
-
-            # -------------------------------------------------
-            # Use DDG HTML endpoint.
-            #
-            # This is generally easier to parse than the
-            # dynamic DuckDuckGo frontend.
-            # -------------------------------------------------
-
-            encoded_query = quote_plus(query)
-
-            url = (
-                "https://html.duckduckgo.com/html/?q="
-                + encoded_query
-            )
-
-            page.goto(
-                url,
-                wait_until="domcontentloaded",
-                timeout=30000
-            )
-
-            # -------------------------------------------------
-            # Wait for results
-            # -------------------------------------------------
-
-            selectors = [
-                "a.result__a",
-                "a[data-testid='result-title-a']",
-                ".result a.result__a",
-            ]
-
-            result_count = 0
-
-            for selector in selectors:
-
-                try:
-
-                    page.locator(
-                        selector
-                    ).first.wait_for(
-                        state="visible",
-                        timeout=5000
-                    )
-
-                    result_count = page.locator(
-                        selector
-                    ).count()
-
-                    if result_count > 0:
-
-                        break
-
-                except Exception:
-
-                    continue
-
-            print(
-                f"🌐 Current URL: {page.url}"
-            )
-
-            print(
-                f"🔗 DuckDuckGo result links detected: "
-                f"{result_count}"
-            )
-
-            # -------------------------------------------------
-            # Extract
-            # -------------------------------------------------
-
-            if result_count > 0:
-
-                self.search_results = (
-                    self._extract_search_results(
-                        engine="duckduckgo"
-                    )
-                )
-
-            print(
-                f"📋 Structured search results: "
-                f"{len(self.search_results)}"
-            )
-
-            # -------------------------------------------------
-            # Print
-            # -------------------------------------------------
-
-            if self.search_results:
-
-                self._print_search_results()
-
-                print(
-                    "✅ DuckDuckGo search "
-                    "results loaded."
-                )
-
-                return (
-                    f"Searching DuckDuckGo for "
-                    f"'{query}'. "
-                    f"Found {len(self.search_results)} results."
-                )
-
-            print(
-                "⚠️ DuckDuckGo result links "
-                "were not detected."
-            )
-
-            return (
-                "DuckDuckGo search completed "
-                "but no usable results were found."
-            )
-
-        except Exception as e:
-
-            self.search_results = []
-
-            print(
-                f"❌ DuckDuckGo search failed: {e}"
-            )
-
-            return (
-                "DuckDuckGo unavailable."
-            )
-
-    # =========================================================
-    # GENERIC SEARCH
-    # =========================================================
-
-    def search(self, query: str):
-
-        query = query.strip()
-
-        if not query:
-
-            self.search_results = []
-
-            return (
-                "Search failed: empty query."
-            )
-
-        print(
-            "\n========== SEARCH =========="
-        )
-
-        print(
-            f"🔎 Generic search requested: {query}"
-        )
-
-        # -----------------------------------------------------
-        # Clear old search results
-        # -----------------------------------------------------
-
-        self.search_results = []
-
-        self.last_search_query = query
-        self.last_search_engine = ""
-
-        # -----------------------------------------------------
-        # GOOGLE
-        # -----------------------------------------------------
-
-        print(
-            "🌐 Trying Google..."
-        )
-
-        google_result = self.google_search(
-            query
-        )
-
-        if self.search_results:
-
-            print(
-                f"✅ Google returned "
-                f"{len(self.search_results)} results."
-            )
-
-            return google_result
-
-        # -----------------------------------------------------
-        # DUCKDUCKGO
-        # -----------------------------------------------------
-
-        print(
-            "🔄 Google unavailable."
-        )
-
-        print(
-            "🌐 Falling back to DuckDuckGo..."
-        )
-
-        duck_result = (
-            self.duckduckgo_search(
-                query
-            )
-        )
-
-        if self.search_results:
-
-            print(
-                f"✅ DuckDuckGo returned "
-                f"{len(self.search_results)} results."
-            )
-
-            return duck_result
-
-        # -----------------------------------------------------
-        # FAILURE
-        # -----------------------------------------------------
-
-        print(
-            "❌ No search results found."
-        )
+        if domain.startswith("www."):
+            domain = domain[4:]
 
         return (
-            f"Search completed for "
-            f"'{query}', but no results "
-            f"could be extracted."
+            host == domain
+            or host.endswith("." + domain)
         )
 
-    # =========================================================
-    # EXTRACT SEARCH RESULTS
-    # =========================================================
+    # ================================================================
+    # HUMAN-VERIFICATION DETECTION
+    # ================================================================
 
-    def _extract_search_results(
+    def _is_verification_page(self, engine=None):
+        """Return True when the current page looks like an anti-bot challenge."""
+        page = self.start()
+        try:
+            title = page.title() or ""
+        except Exception:
+            title = ""
+        try:
+            body = page.locator("body").inner_text(timeout=5000) or ""
+        except Exception:
+            body = ""
+
+        haystack = (title + "\n" + body).lower()
+        markers = (
+            "captcha",
+            "recaptcha",
+            "hcaptcha",
+            "verify you are human",
+            "verify that you are human",
+            "are you human",
+            "human verification",
+            "robot check",
+            "unusual traffic",
+            "automated queries",
+            "confirm you are not a robot",
+            "not a robot",
+            "security check",
+            "checking your browser",
+            "challenge-platform",
+            "/sorry/",
+        )
+        return any(marker in haystack for marker in markers)
+
+    # ================================================================
+    # GLOBAL SEARCH
+    # ================================================================
+
+    def _global_search(
         self,
-        engine="auto"
+        query,
+        engine="auto",
     ):
 
-        if not self._session_alive():
+        page = self.start()
 
-            return []
+        query = str(query).strip()
 
-        page = self.page
+        if not query:
+            raise ValueError(
+                "Search query cannot be empty"
+            )
 
-        # -----------------------------------------------------
-        # Selector priority
-        # -----------------------------------------------------
+        if engine == "auto":
 
-        if engine == "google":
-
-            selectors = [
-                "a:has(h3)"
-            ]
-
-        elif engine == "duckduckgo":
-
-            selectors = [
-                "a.result__a",
-                "a[data-testid='result-title-a']",
-                ".result a.result__a",
+            # Automatic search intentionally avoids DuckDuckGo because
+            # it may present human-verification challenges to automation.
+            engines = [
+                "google",
+                "bing",
             ]
 
         else:
 
-            selectors = [
-                "a:has(h3)",
-                "a.result__a",
-                "a[data-testid='result-title-a']",
-                "a:has(h2)",
+            engines = [
+                str(engine).lower().strip()
             ]
 
-        results = []
+        search_urls = {
+            "google":
+                "https://www.google.com/search?q=",
 
-        seen = set()
+            "bing":
+                "https://www.bing.com/search?q=",
 
-        # -----------------------------------------------------
-        # Extract
-        # -----------------------------------------------------
+            "duckduckgo":
+                "https://duckduckgo.com/?q=",
+        }
+
+        last_error = None
+
+        for current_engine in engines:
+
+            if current_engine not in search_urls:
+                continue
+
+            try:
+
+                base_url = search_urls[
+                    current_engine
+                ]
+
+                target_url = (
+                    base_url
+                    + quote_plus(query)
+                )
+
+                access_controller.authorize_url(
+                    target_url
+                )
+
+                page.goto(
+                    target_url,
+                    wait_until="domcontentloaded",
+                    timeout=20000,
+                )
+
+                # Small wait for dynamic results
+                try:
+                    page.wait_for_timeout(700)
+                except Exception:
+                    pass
+
+                if self._is_verification_page(current_engine):
+                    raise RuntimeError(
+                        f"{current_engine} presented a human-verification page."
+                    )
+
+                results = (
+                    self._extract_global_results(current_engine)
+                )
+
+                if not results:
+                    raise RuntimeError(
+                        f"{current_engine} returned no usable external results."
+                    )
+
+                self.search_results = results
+                self.last_search_query = query
+                self.last_search_engine = (
+                    current_engine
+                )
+                self.last_search_scope = "web"
+
+                self.last_url = page.url
+
+                try:
+                    self.last_title = page.title()
+                except Exception:
+                    self.last_title = ""
+
+                return {
+                    "status": "success",
+                    "action": "search",
+                    "scope": "web",
+                    "engine": current_engine,
+                    "query": query,
+                    "results": results,
+                    "url": page.url,
+                    "title": self.last_title,
+                }
+
+            except Exception as exc:
+
+                last_error = exc
+
+        raise RuntimeError(
+            "No usable search engine. "
+            f"Last error: {last_error}"
+        )
+
+    # ================================================================
+    # SEARCH
+    # ================================================================
+
+    def search(
+        self,
+        query,
+        engine="auto",
+    ):
+        """
+        Intelligent search.
+
+        Behavior:
+
+        1. If a supported website is currently open:
+           search inside that website.
+
+        2. If the website has no direct search URL:
+           try to find its search box.
+
+        3. If no website search is possible:
+           use Google, then Bing.
+        """
+
+        query = str(query).strip()
+
+        if not query:
+            raise ValueError(
+                "Search query cannot be empty"
+            )
+
+        page = self.start()
+
+        current_url = (
+            page.url or ""
+        ).lower()
+
+        # ------------------------------------------------------------
+        # If user explicitly requested a search engine,
+        # always use that engine.
+        # ------------------------------------------------------------
+
+        if engine != "auto":
+
+            return self._global_search(
+                query,
+                engine,
+            )
+
+        # ------------------------------------------------------------
+        # Blank page -> global search
+        # ------------------------------------------------------------
+
+        if current_url in (
+            "",
+            "about:blank",
+            "about:blank#",
+        ):
+
+            return self._global_search(
+                query,
+                "auto",
+            )
+
+        # ------------------------------------------------------------
+        # Try current website
+        # ------------------------------------------------------------
+
+        site_result = (
+            self._search_current_site(
+                query
+            )
+        )
+
+        if site_result is not None:
+            return site_result
+
+        # ------------------------------------------------------------
+        # Current site could not be searched.
+        # Fall back to global web search.
+        # ------------------------------------------------------------
+
+        return self._global_search(
+            query,
+            "auto",
+        )
+
+    # ================================================================
+    # CURRENT WEBSITE SEARCH
+    # ================================================================
+
+    def _search_current_site(
+        self,
+        query,
+    ):
+
+        page = self.start()
+
+        host = self._current_domain()
+
+        if not host:
+            return None
+
+        # ------------------------------------------------------------
+        # Known website direct-search URL
+        # ------------------------------------------------------------
+
+        for domain, template in (
+            self.SITE_SEARCH_URLS.items()
+        ):
+
+            if not self._domain_matches(
+                host,
+                domain,
+            ):
+                continue
+
+            try:
+
+                target_url = template.format(
+                    query=quote_plus(query)
+                )
+
+                access_controller.authorize_url(
+                    target_url
+                )
+
+                page.goto(
+                    target_url,
+                    wait_until="domcontentloaded",
+                    timeout=25000,
+                )
+
+                try:
+                    page.wait_for_timeout(800)
+                except Exception:
+                    pass
+
+                results = (
+                    self._extract_site_results()
+                )
+
+                self.search_results = results
+                self.last_search_query = query
+                self.last_search_engine = domain
+                self.last_search_scope = "site"
+
+                self.last_url = page.url
+
+                try:
+                    self.last_title = page.title()
+                except Exception:
+                    self.last_title = ""
+
+                return {
+                    "status": "success",
+                    "action": "search",
+                    "scope": "site",
+                    "site": domain,
+                    "query": query,
+                    "results": results,
+                    "url": page.url,
+                    "title": self.last_title,
+                }
+
+            except Exception:
+                # Direct search failed.
+                # Continue to search-box strategy.
+                break
+
+        # ------------------------------------------------------------
+        # Generic website search-box strategy
+        # ------------------------------------------------------------
+
+        return self._search_using_page_input(
+            query
+        )
+
+    # ================================================================
+    # GENERIC WEBSITE SEARCH BOX
+    # ================================================================
+
+    def _search_using_page_input(
+        self,
+        query,
+    ):
+
+        page = self.start()
+
+        selectors = [
+
+            # HTML search inputs
+            'input[type="search"]',
+
+            # Common names
+            'input[name="q"]',
+            'input[name="query"]',
+            'input[name="search"]',
+            'input[name="keyword"]',
+
+            # Placeholders
+            'input[placeholder*="search" i]',
+            'input[placeholder*="find" i]',
+
+            # Accessibility
+            'input[aria-label*="search" i]',
+            'input[aria-label*="find" i]',
+
+            # Textareas
+            'textarea[placeholder*="search" i]',
+
+            # ARIA searchbox
+            '[role="searchbox"]',
+        ]
 
         for selector in selectors:
 
             try:
 
-                links = page.locator(
+                locator = page.locator(
                     selector
-                ).all()
+                )
 
-            except Exception:
+                count = locator.count()
 
-                continue
+                if count <= 0:
+                    continue
 
-            for link in links:
+                for index in range(
+                    min(count, 10)
+                ):
 
-                try:
-
-                    href = (
-                        link.get_attribute(
-                            "href"
-                        )
+                    target = locator.nth(
+                        index
                     )
-
-                    if not href:
-
-                        continue
-
-                    href = href.strip()
-
-                    if not href:
-
-                        continue
-
-                    # -------------------------------------------------
-                    # Ignore fragments
-                    # -------------------------------------------------
-
-                    if href.startswith("#"):
-
-                        continue
-
-                    # -------------------------------------------------
-                    # Ignore Google internal URLs
-                    # -------------------------------------------------
-
-                    if (
-                        "google.com/search" in href
-                        or "google.com/sorry" in href
-                    ):
-
-                        continue
-
-                    # -------------------------------------------------
-                    # Ignore DuckDuckGo internal URLs
-                    # -------------------------------------------------
-
-                    if (
-                        "duckduckgo.com/?q=" in href
-                    ):
-
-                        continue
-
-                    # -------------------------------------------------
-                    # Convert relative URL
-                    # -------------------------------------------------
-
-                    href = urljoin(
-                        page.url,
-                        href
-                    )
-
-                    # -------------------------------------------------
-                    # Text
-                    # -------------------------------------------------
 
                     try:
 
-                        text = (
-                            link.inner_text()
-                            .strip()
+                        if not target.is_visible():
+                            continue
+
+                        if not target.is_editable():
+                            continue
+
+                        target.fill(query)
+
+                        target.press("Enter")
+
+                        try:
+
+                            page.wait_for_load_state(
+                                "domcontentloaded",
+                                timeout=10000,
+                            )
+
+                        except Exception:
+                            pass
+
+                        try:
+                            page.wait_for_timeout(
+                                500
+                            )
+                        except Exception:
+                            pass
+
+                        self.search_results = (
+                            self._extract_site_results()
                         )
 
+                        self.last_search_query = (
+                            query
+                        )
+
+                        self.last_search_engine = (
+                            self._current_domain()
+                        )
+
+                        self.last_search_scope = (
+                            "site"
+                        )
+
+                        self.last_url = page.url
+
+                        try:
+                            self.last_title = (
+                                page.title()
+                            )
+                        except Exception:
+                            self.last_title = ""
+
+                        return {
+                            "status": "success",
+                            "action": "search",
+                            "scope": "site",
+                            "site": self._current_domain(),
+                            "query": query,
+                            "results": self.search_results,
+                            "url": page.url,
+                            "title": self.last_title,
+                            "method": "search_box",
+                        }
+
                     except Exception:
-
-                        text = ""
-
-                    text = " ".join(
-                        text.split()
-                    )
-
-                    if not text:
-
                         continue
 
-                    # -------------------------------------------------
-                    # Deduplicate
-                    # -------------------------------------------------
+            except Exception:
+                continue
 
-                    key = href.lower()
+        return None
 
-                    if key in seen:
+    # ================================================================
+    # GOOGLE SEARCH
+    # ================================================================
 
-                        continue
+    def google_search(self, query):
 
-                    seen.add(key)
+        return self._global_search(
+            query,
+            "google",
+        )
 
-                    # -------------------------------------------------
-                    # Build result
-                    # -------------------------------------------------
+    # ================================================================
+    # BING SEARCH
+    # ================================================================
 
-                    result = {
+    def bing_search(self, query):
 
-                        "index":
-                            len(results) + 1,
+        return self._global_search(
+            query,
+            "bing",
+        )
 
-                        "type":
-                            "link",
+    # ================================================================
+    # DUCKDUCKGO SEARCH
+    # ================================================================
 
-                        "text":
-                            text[:500],
+    def duckduckgo_search(self, query):
 
-                        "title":
-                            text[:500],
+        return self._global_search(
+            query,
+            "duckduckgo",
+        )
 
-                        "href":
-                            href,
+    # ================================================================
+    # GLOBAL SEARCH RESULT EXTRACTION
+    # ================================================================
 
-                        "url":
-                            href,
-                    }
+    def _extract_global_results(self, engine=None):
+        """Extract real external results from Google or Bing.
 
-                    results.append(
-                        result
-                    )
+        Search engines change their HTML frequently, so use engine-specific
+        selectors first and a conservative generic fallback second.
+        """
+        page = self.start()
+        engine = (engine or self.last_search_engine or "").lower().strip()
+        results = []
+        seen_urls = set()
 
+        def add_result(text, href):
+            try:
+                text = re.sub(r"\s+", " ", str(text or "")).strip()
+                href = str(href or "").strip()
+                if not text or len(text) < 2 or not href:
+                    return
+
+                # Google redirect URLs.
+                if href.startswith("/url?"):
+                    match = re.search(r"[?&]q=([^&]+)", href)
+                    if match:
+                        from urllib.parse import unquote
+                        href = unquote(match.group(1))
+
+                if href.startswith("//"):
+                    href = "https:" + href
+                elif href.startswith("/"):
+                    href = urljoin(page.url, href)
+
+                if not re.match(r"^https?://", href, re.IGNORECASE):
+                    return
+
+                parsed = urlparse(href)
+                host = parsed.netloc.lower().split(":", 1)[0]
+                blocked = {
+                    "google.com", "www.google.com", "google.co.in",
+                    "www.google.co.in", "bing.com", "www.bing.com",
+                    "duckduckgo.com", "www.duckduckgo.com",
+                }
+                if host in blocked or host.endswith(".google.com") or host.endswith(".bing.com"):
+                    return
+
+                # Ignore obvious search-engine/navigation endpoints.
+                if href.lower().startswith((
+                    "https://www.google.com/search",
+                    "https://www.bing.com/search",
+                    "https://duckduckgo.com/?q=",
+                )):
+                    return
+
+                key = href.split("#", 1)[0]
+                if key in seen_urls:
+                    return
+                seen_urls.add(key)
+                results.append({
+                    "title": text[:240],
+                    "url": href,
+                })
+            except Exception:
+                return
+
+        # ------------------------------------------------------------
+        # Google: result links normally contain an <h3>.
+        # ------------------------------------------------------------
+        if engine == "google":
+            selectors = [
+                "a:has(h3)",
+                "div#search a[href]:has(h3)",
+                "div.MjjYud a[href]:has(h3)",
+            ]
+            for selector in selectors:
+                try:
+                    anchors = page.locator(selector).all()
+                    for anchor in anchors:
+                        try:
+                            h3 = anchor.locator("h3").first
+                            title = h3.inner_text() if h3.count() else anchor.inner_text()
+                            href = anchor.get_attribute("href") or ""
+                            add_result(title, href)
+                        except Exception:
+                            continue
+                        if len(results) >= 20:
+                            return results
+                    if results:
+                        return results
                 except Exception:
-
                     continue
+
+        # ------------------------------------------------------------
+        # Bing: result links are normally inside li.b_algo h2.
+        # ------------------------------------------------------------
+        if engine == "bing":
+            selectors = [
+                "li.b_algo h2 a[href]",
+                "main li.b_algo h2 a[href]",
+                "ol#b_results li.b_algo h2 a[href]",
+            ]
+            for selector in selectors:
+                try:
+                    anchors = page.locator(selector).all()
+                    for anchor in anchors:
+                        try:
+                            add_result(
+                                anchor.inner_text(),
+                                anchor.get_attribute("href") or "",
+                            )
+                        except Exception:
+                            continue
+                        if len(results) >= 20:
+                            return results
+                    if results:
+                        return results
+                except Exception:
+                    continue
+
+        # ------------------------------------------------------------
+        # Conservative generic fallback. This is deliberately used only
+        # after engine-specific extraction so navigation links do not win.
+        # ------------------------------------------------------------
+        try:
+            anchors = page.locator("a[href]").all()
+        except Exception:
+            anchors = []
+
+        for anchor in anchors:
+            try:
+                text = anchor.inner_text() or ""
+                href = anchor.get_attribute("href") or ""
+                add_result(text, href)
+                if len(results) >= 20:
+                    break
+            except Exception:
+                continue
 
         return results
 
-    # =========================================================
-    # PRINT SEARCH RESULTS
-    # =========================================================
+    # ================================================================
+    # SITE SEARCH RESULT EXTRACTION
+    # ================================================================
 
-    def _print_search_results(self):
+    def _extract_site_results(self):
 
-        print(
-            "\n========== SEARCH RESULTS =========="
-        )
+        page = self.start()
 
-        for result in self.search_results[:10]:
+        results = []
+        seen = set()
 
-            print(
-                f"{result['index']}. "
-                f"{result['title']}"
-            )
+        try:
 
-            print(
-                f"   {result['href']}"
-            )
+            anchors = page.locator(
+                "a[href]"
+            ).all()
 
-        print(
-            "===================================="
-        )
+        except Exception:
 
-    # =========================================================
-    # GET SEARCH RESULTS
-    # =========================================================
+            return results
+
+        for anchor in anchors:
+
+            try:
+
+                href = (
+                    anchor.get_attribute(
+                        "href"
+                    )
+                    or ""
+                )
+
+                text = (
+                    anchor.inner_text()
+                    or ""
+                ).strip()
+
+                if not href:
+                    continue
+
+                if not text:
+                    continue
+
+                if len(text) < 2:
+                    continue
+
+                if href.startswith(
+                    "javascript:"
+                ):
+                    continue
+
+                if href.startswith(
+                    "#"
+                ):
+                    continue
+
+                # Relative links
+                if href.startswith(
+                    "/"
+                ):
+
+                    href = urljoin(
+                        page.url,
+                        href,
+                    )
+
+                if not re.match(
+                    r"^https?://",
+                    href,
+                    re.IGNORECASE,
+                ):
+                    continue
+
+                key = (
+                    text,
+                    href,
+                )
+
+                if key in seen:
+                    continue
+
+                seen.add(key)
+
+                results.append(
+                    {
+                        "title": text[:240],
+                        "url": href,
+                    }
+                )
+
+                if len(results) >= 20:
+                    break
+
+            except Exception:
+                continue
+
+        return results
+
+    # ================================================================
+    # SEARCH RESULT ACCESS
+    # ================================================================
 
     def get_search_results(self):
 
@@ -914,1031 +1028,789 @@ class BrowserAutomation:
             self.search_results
         )
 
-    # =========================================================
-    # GET FIRST SEARCH RESULT
-    # =========================================================
-
     def get_first_search_result(self):
 
         if not self.search_results:
-
             return None
 
         return self.search_results[0]
 
-    # =========================================================
-    # GET LAST SEARCH RESULT
-    # =========================================================
-
     def get_last_search_result(self):
 
         if not self.search_results:
-
             return None
 
         return self.search_results[-1]
 
-    # =========================================================
-    # CLICK SELECTOR
-    # =========================================================
+    # ================================================================
+    # TARGET RESOLUTION
+    # ================================================================
 
-    def click(self, selector: str):
+    def _resolve(self, target):
 
-        if not selector:
+        page = self.start()
 
-            return (
-                "Click failed: "
-                "selector cannot be empty."
-            )
-
-        try:
-
-            page = self.start()
-
-            element = page.locator(
-                selector
-            ).first
-
-            element.wait_for(
-                state="visible",
-                timeout=10000
-            )
-
-            element.click()
-
-            try:
-
-                page.wait_for_load_state(
-                    "domcontentloaded",
-                    timeout=10000
-                )
-
-            except Exception:
-
-                pass
-
-            return (
-                f"Clicked element: "
-                f"{selector}"
-            )
-
-        except Exception as e:
-
-            return (
-                f"Click failed: {e}"
-            )
-
-    # =========================================================
-    # CLICK RESOLVED TARGET
-    # =========================================================
-
-    def click_target(self, target):
-
-        if not target:
-
-            return (
-                "Click failed: "
-                "target is None."
-            )
-
-        try:
-
-            page = self.start()
-
-            href = (
-                target.get("href")
-                or target.get("url")
-            )
-
-            text = (
-                target.get("text")
-                or target.get("title")
-                or ""
-            ).strip()
-
-            print(
-                "\n========== CLICK TARGET =========="
-            )
-
-            print(
-                f"🎯 Target text: {text}"
-            )
-
-            print(
-                f"🔗 Target href: {href}"
-            )
-
-            before_url = page.url
-
-            print(
-                f"🌐 Before URL: {before_url}"
-            )
-
-            # =================================================
-            # STRATEGY 1 — DIRECT URL
-            # =================================================
-
-            if href:
-
-                print(
-                    "🎯 Using resolved target URL..."
-                )
-
-                try:
-
-                    page.goto(
-                        href,
-                        wait_until="domcontentloaded",
-                        timeout=30000
-                    )
-
-                    after_url = page.url
-
-                    print(
-                        f"🌐 After URL: {after_url}"
-                    )
-
-                    print(
-                        "✅ Navigation verified."
-                    )
-
-                    return (
-                        f"Clicked target: "
-                        f"{text}"
-                    )
-
-                except Exception as e:
-
-                    print(
-                        f"⚠️ Direct URL navigation "
-                        f"failed: {e}"
-                    )
-
-            # =================================================
-            # STRATEGY 2 — HREF MATCH
-            # =================================================
-
-            if href:
-
-                try:
-
-                    links = page.locator(
-                        "a"
-                    ).all()
-
-                    for link in links:
-
-                        try:
-
-                            link_href = (
-                                link.get_attribute(
-                                    "href"
-                                )
-                            )
-
-                            if not link_href:
-
-                                continue
-
-                            absolute_href = urljoin(
-                                page.url,
-                                link_href
-                            )
-
-                            if (
-                                absolute_href
-                                != href
-                            ):
-
-                                continue
-
-                            print(
-                                "🎯 Matching href found."
-                            )
-
-                            link.click()
-
-                            try:
-
-                                page.wait_for_load_state(
-                                    "domcontentloaded",
-                                    timeout=15000
-                                )
-
-                            except Exception:
-
-                                pass
-
-                            return (
-                                f"Clicked target: "
-                                f"{text}"
-                            )
-
-                        except Exception:
-
-                            continue
-
-                except Exception:
-
-                    pass
-
-            # =================================================
-            # STRATEGY 3 — EXACT TEXT
-            # =================================================
-
-            if text:
-
-                try:
-
-                    links = page.locator(
-                        "a"
-                    ).all()
-
-                    for link in links:
-
-                        try:
-
-                            link_text = (
-                                link.inner_text()
-                                .strip()
-                            )
-
-                            if (
-                                link_text
-                                == text
-                            ):
-
-                                print(
-                                    "🎯 Exact text "
-                                    "match found."
-                                )
-
-                                link.click()
-
-                                try:
-
-                                    page.wait_for_load_state(
-                                        "domcontentloaded",
-                                        timeout=15000
-                                    )
-
-                                except Exception:
-
-                                    pass
-
-                                return (
-                                    f"Clicked target: "
-                                    f"{text}"
-                                )
-
-                        except Exception:
-
-                            continue
-
-                except Exception:
-
-                    pass
-
-            # =================================================
-            # STRATEGY 4 — PARTIAL TEXT
-            # =================================================
-
-            if text:
-
-                try:
-
-                    links = page.locator(
-                        "a"
-                    ).all()
-
-                    for link in links:
-
-                        try:
-
-                            link_text = (
-                                link.inner_text()
-                                .strip()
-                            )
-
-                            if (
-                                text.lower()
-                                in link_text.lower()
-                            ):
-
-                                print(
-                                    "🎯 Partial text "
-                                    "match found."
-                                )
-
-                                link.click()
-
-                                try:
-
-                                    page.wait_for_load_state(
-                                        "domcontentloaded",
-                                        timeout=15000
-                                    )
-
-                                except Exception:
-
-                                    pass
-
-                                return (
-                                    f"Clicked target: "
-                                    f"{text}"
-                                )
-
-                        except Exception:
-
-                            continue
-
-                except Exception:
-
-                    pass
-
-            return (
-                "Click failed: "
-                "target element not found."
-            )
-
-        except Exception as e:
-
-            print(
-                f"❌ Click target failed: {e}"
-            )
-
-            return (
-                f"Click target failed: {e}"
-            )
-
-    # =========================================================
-    # FILL SELECTOR
-    # =========================================================
-
-    def fill(
-        self,
-        selector: str,
-        text: str
-    ):
-
-        try:
-
-            page = self.start()
-
-            element = page.locator(
-                selector
-            ).first
-
-            element.wait_for(
-                state="visible",
-                timeout=10000
-            )
-
-            element.fill(
-                text
-            )
-
-            return (
-                f"Filled element: "
-                f"{selector}"
-            )
-
-        except Exception as e:
-
-            return (
-                f"Fill failed: {e}"
-            )
-
-    # =========================================================
-    # PRESS SELECTOR
-    # =========================================================
-
-    def press(
-        self,
-        selector: str,
-        key: str
-    ):
-
-        try:
-
-            page = self.start()
-
-            element = page.locator(
-                selector
-            ).first
-
-            element.wait_for(
-                state="visible",
-                timeout=10000
-            )
-
-            element.press(
-                key
-            )
-
-            return (
-                f"Pressed {key} "
-                f"on {selector}"
-            )
-
-        except Exception as e:
-
-            return (
-                f"Press failed: {e}"
-            )
-
-    # =========================================================
-    # PRESS KEY ON CURRENT PAGE
-    # =========================================================
-
-    def press_key(self, key: str):
-
-        if not key:
-            return (
-                "Press failed: "
-                "key cannot be empty."
-            )
-
-        try:
-            page = self.start()
-
-            print(
-                f"⌨️ Pressing key: {key}"
-            )
-
-            before_url = page.url
-
-            # -------------------------------------------------
-            # Normalize human-friendly key names to Playwright
-            # key names. Playwright is case-sensitive for names
-            # such as Enter, Escape, ArrowUp, etc.
-            # -------------------------------------------------
-            key_map = {
-                "enter": "Enter",
-                "return": "Enter",
-                "esc": "Escape",
-                "escape": "Escape",
-                "tab": "Tab",
-                "backspace": "Backspace",
-                "delete": "Delete",
-                "space": "Space",
-                "up": "ArrowUp",
-                "down": "ArrowDown",
-                "left": "ArrowLeft",
-                "right": "ArrowRight",
-                "home": "Home",
-                "end": "End",
-                "pageup": "PageUp",
-                "pagedown": "PageDown",
-            }
-
-            normalized_key = str(key).strip()
-
-            normalized_key = key_map.get(
-                normalized_key.casefold(),
-                normalized_key
-            )
-
-            print(
-                f"⌨️ Normalized key: {normalized_key}"
-            )
-
-            # IMPORTANT:
-            # Press ONLY the normalized key.
-            # The previous implementation pressed normalized_key and
-            # then pressed the original key again. For input such as
-            # ENTER, the first press succeeded as Enter, but the second
-            # raw press failed with: Unknown key: "ENTER".
-            page.keyboard.press(
-                normalized_key
-            )
-
-            # -------------------------------------------------
-            # Navigation synchronization for Enter
-            # -------------------------------------------------
-            if normalized_key == "Enter":
-
-                print(
-                    "⏳ Checking for navigation..."
-                )
-
-                try:
-                    page.wait_for_function(
-                        """
-                        (beforeUrl) => {
-                            return window.location.href !== beforeUrl;
-                        }
-                        """,
-                        before_url,
-                        timeout=10000
-                    )
-
-                    print(
-                        "🌐 Navigation detected."
-                    )
-
-                except Exception:
-                    print(
-                        "ℹ️ No URL change detected."
-                    )
-
-                try:
-                    page.wait_for_load_state(
-                        "domcontentloaded",
-                        timeout=10000
-                    )
-                except Exception:
-                    print(
-                        "ℹ️ DOMContentLoaded wait timed out."
-                    )
-
-                try:
-                    page.wait_for_timeout(
-                        300
-                    )
-                except Exception:
-                    pass
-
-                print(
-                    f"🌐 Final URL: {page.url}"
-                )
-
-                try:
-                    print(
-                        f"📄 Final title: {page.title()}"
-                    )
-                except Exception:
-                    pass
-
-            return (
-                f"Pressed {normalized_key}"
-            )
-
-        except Exception as e:
-            return (
-                f"Press failed: {e}"
-            )
-
-
-    # =========================================================
-    # FILL FROM COMMAND
-    # =========================================================
-
-    def fill_from_command(
-        self,
-        target: str,
-        text: str
-    ):
-        """
-        Fill a browser input identified by a natural-language target.
-
-        Example:
-            target = "search box"
-            text = "Python asyncio tutorial"
-        """
-
-        if not target or not target.strip():
-            return "Fill failed: target is empty."
-
-        if text is None:
-            return "Fill failed: text is empty."
-
-        target = " ".join(
-            str(target).split()
+        target = str(
+            target
         ).strip()
 
-        text = str(text)
+        if not target:
+            raise ValueError(
+                "Browser target cannot be empty"
+            )
+
+        pattern = re.compile(
+            re.escape(target),
+            re.IGNORECASE,
+        )
+
+        # ------------------------------------------------------------
+        # Buttons
+        # ------------------------------------------------------------
 
         try:
 
-            page = self.start()
+            locator = page.get_by_role(
+                "button",
+                name=pattern,
+            )
 
-            if page is None:
-                return (
-                    "Fill failed: "
-                    "browser page is not available."
+            if locator.count() > 0:
+                return locator
+
+        except Exception:
+            pass
+
+        # ------------------------------------------------------------
+        # Links
+        # ------------------------------------------------------------
+
+        try:
+
+            locator = page.get_by_role(
+                "link",
+                name=pattern,
+            )
+
+            if locator.count() > 0:
+                return locator
+
+        except Exception:
+            pass
+
+        # ------------------------------------------------------------
+        # Text
+        # ------------------------------------------------------------
+
+        try:
+
+            locator = page.get_by_text(
+                pattern
+            )
+
+            if locator.count() > 0:
+                return locator
+
+        except Exception:
+            pass
+
+        # ------------------------------------------------------------
+        # Placeholder
+        # ------------------------------------------------------------
+
+        try:
+
+            locator = page.locator(
+                "input[placeholder]"
+            )
+
+            count = locator.count()
+
+            for index in range(
+                min(count, 20)
+            ):
+
+                item = locator.nth(
+                    index
                 )
 
-            normalized_target = (
-                " ".join(
-                    target.split()
-                ).casefold()
-            )
-
-            print(
-                "\n========== FILL TARGET =========="
-            )
-            print(f"Target: {target}")
-            print(f"Text: {text}")
-            print(
-                f"Normalized target: {normalized_target}"
-            )
-
-            aliases = {
-                "search box": {
-                    "search",
-                    "search box",
-                    "search field",
-                    "search input",
-                    "search bar",
-                },
-                "email": {
-                    "email",
-                    "email field",
-                    "email input",
-                    "email address",
-                },
-                "username": {
-                    "username",
-                    "username field",
-                    "username input",
-                    "user name",
-                },
-                "password": {
-                    "password",
-                    "password field",
-                    "password input",
-                },
-                "message": {
-                    "message",
-                    "message field",
-                    "message box",
-                    "message input",
-                    "message area",
-                    "text area",
-                },
-            }
-
-            target_variants = aliases.get(
-                normalized_target,
-                {normalized_target}
-            )
-
-            selectors = [
-                "input",
-                "textarea",
-                "[contenteditable='true']",
-            ]
-
-            for selector in selectors:
-
                 try:
-                    elements = page.locator(
-                        selector
-                    ).all()
-                except Exception as selector_error:
-                    print(
-                        "⚠️ Could not inspect selector "
-                        f"{selector}: {selector_error}"
+
+                    placeholder = (
+                        item.get_attribute(
+                            "placeholder"
+                        )
+                        or ""
                     )
+
+                    if re.search(
+                        pattern,
+                        placeholder,
+                    ):
+
+                        return item
+
+                except Exception:
                     continue
 
-                for element in elements:
+        except Exception:
+            pass
 
-                    try:
+        # ------------------------------------------------------------
+        # aria-label
+        # ------------------------------------------------------------
 
-                        if not element.is_visible():
-                            continue
+        try:
 
-                        placeholder = (
-                            element.get_attribute(
-                                "placeholder"
-                            ) or ""
-                        ).strip().casefold()
-
-                        name = (
-                            element.get_attribute(
-                                "name"
-                            ) or ""
-                        ).strip().casefold()
-
-                        aria_label = (
-                            element.get_attribute(
-                                "aria-label"
-                            ) or ""
-                        ).strip().casefold()
-
-                        title = (
-                            element.get_attribute(
-                                "title"
-                            ) or ""
-                        ).strip().casefold()
-
-                        element_id = (
-                            element.get_attribute(
-                                "id"
-                            ) or ""
-                        ).strip().casefold()
-
-                        input_type = (
-                            element.get_attribute(
-                                "type"
-                            ) or ""
-                        ).strip().casefold()
-
-                        candidates = {
-                            placeholder,
-                            name,
-                            aria_label,
-                            title,
-                            element_id,
-                            input_type,
-                        }
-
-                        candidates.discard("")
-
-                        print(
-                            "🔎 Candidate:",
-                            candidates
-                        )
-
-                        matched = False
-
-                        for candidate in candidates:
-                            if candidate in target_variants:
-                                matched = True
-                                break
-
-                        if not matched:
-                            for candidate in candidates:
-                                for variant in target_variants:
-                                    if (
-                                        variant
-                                        and (
-                                            variant in candidate
-                                            or candidate in variant
-                                        )
-                                    ):
-                                        matched = True
-                                        break
-                                if matched:
-                                    break
-
-                        if not matched and normalized_target in {
-                            "search",
-                            "search box",
-                            "search field",
-                            "search input",
-                            "search bar",
-                        }:
-                            if input_type == "search":
-                                matched = True
-
-                        if not matched and normalized_target in {
-                            "email",
-                            "email field",
-                            "email input",
-                            "email address",
-                        }:
-                            if input_type == "email":
-                                matched = True
-
-                        if not matched and normalized_target in {
-                            "password",
-                            "password field",
-                            "password input",
-                        }:
-                            if input_type == "password":
-                                matched = True
-
-                        if not matched:
-                            continue
-
-                        print(
-                            "\n🎯 FILL TARGET RESOLVED"
-                        )
-                        print(f"   Target      : {target}")
-                        print(f"   Placeholder : {placeholder}")
-                        print(f"   Name        : {name}")
-                        print(f"   ARIA label  : {aria_label}")
-                        print(f"   ID          : {element_id}")
-                        print(f"   Type        : {input_type}")
-
-                        element.scroll_into_view_if_needed()
-                        element.fill(text)
-
-                        print(
-                            "✅ Input filled successfully."
-                        )
-
-                        return (
-                            f"Filled {target} "
-                            f"with '{text}'"
-                        )
-
-                    except Exception as element_error:
-
-                        print(
-                            "⚠️ Input candidate failed: "
-                            f"{element_error}"
-                        )
-                        continue
-
-            return (
-                "Fill failed: "
-                f"could not resolve '{target}'."
+            locator = page.locator(
+                "[aria-label]"
             )
 
-        except Exception as e:
+            count = locator.count()
 
-            return (
-                f"Fill failed: {e}"
+            for index in range(
+                min(count, 20)
+            ):
+
+                item = locator.nth(
+                    index
+                )
+
+                try:
+
+                    label = (
+                        item.get_attribute(
+                            "aria-label"
+                        )
+                        or ""
+                    )
+
+                    if re.search(
+                        pattern,
+                        label,
+                    ):
+
+                        return item
+
+                except Exception:
+                    continue
+
+        except Exception:
+            pass
+
+        raise ValueError(
+            f"Could not resolve browser target: "
+            f"{target}"
+        )
+
+    # ================================================================
+    # CLICK
+    # ================================================================
+
+    def click(self, target):
+
+        page = self.start()
+
+        target = str(
+            target
+        ).strip()
+
+        # ------------------------------------------------------------
+        # First search result
+        # ------------------------------------------------------------
+
+        if target.lower() in (
+            "first search result",
+            "first result",
+            "the first result",
+        ):
+
+            result = (
+                self.get_first_search_result()
             )
 
+            if result:
 
-    # =========================================================
-    # READ PAGE
-    # =========================================================
+                return self.open_url(
+                    result["url"]
+                )
 
-    def read_page(self):
+            raise ValueError(
+                "No search results available."
+            )
 
-        print(
-            "\n📖 Reading current page..."
+        # ------------------------------------------------------------
+        # Last search result
+        # ------------------------------------------------------------
+
+        if target.lower() in (
+            "last search result",
+            "last result",
+            "the last result",
+        ):
+
+            result = (
+                self.get_last_search_result()
+            )
+
+            if result:
+
+                return self.open_url(
+                    result["url"]
+                )
+
+            raise ValueError(
+                "No search results available."
+            )
+
+        # ------------------------------------------------------------
+        # Normal target
+        # ------------------------------------------------------------
+
+        locator = self._resolve(
+            target
+        )
+
+        locator.first.click(
+            timeout=15000
         )
 
         try:
+            page.wait_for_timeout(300)
+        except Exception:
+            pass
 
-            page = self.start()
+        return {
+            "status": "success",
+            "action": "click",
+            "target": target,
+            "url": page.url,
+            "title": page.title(),
+        }
 
-            # -------------------------------------------------
-            # Wait for DOM
-            # -------------------------------------------------
+    # ================================================================
+    # FILL
+    # ================================================================
+
+    def fill(
+        self,
+        target,
+        text,
+    ):
+
+        page = self.start()
+
+        target = str(
+            target
+        ).strip()
+
+        text = str(
+            text
+        )
+
+        locator = self._resolve(
+            target
+        )
+
+        locator.first.fill(
+            text
+        )
+
+        return {
+            "status": "success",
+            "action": "fill",
+            "target": target,
+            "text": text,
+            "url": page.url,
+        }
+
+    # ================================================================
+    # COMMAND COMPATIBILITY
+    # ================================================================
+
+    def fill_from_command(
+        self,
+        target,
+        text,
+    ):
+
+        return self.fill(
+            target,
+            text,
+        )
+
+    # ================================================================
+    # PRESS KEY
+    # ================================================================
+
+    def press_key(self, key):
+
+        page = self.start()
+
+        key = str(
+            key
+        ).strip()
+
+        if not key:
+            raise ValueError(
+                "Key cannot be empty"
+            )
+
+        page.keyboard.press(
+            key
+        )
+
+        return {
+            "status": "success",
+            "action": "press",
+            "key": key,
+            "url": page.url,
+        }
+
+    # ================================================================
+    # PRESS ALIAS
+    # ================================================================
+
+    def press(self, key):
+
+        return self.press_key(
+            key
+        )
+
+    # ================================================================
+    # HOVER
+    # ================================================================
+
+    def hover(self, target):
+
+        target = str(
+            target
+        ).strip()
+
+        locator = self._resolve(
+            target
+        )
+
+        locator.first.hover(
+            timeout=15000
+        )
+
+        return {
+            "status": "success",
+            "action": "hover",
+            "target": target,
+        }
+
+    # ================================================================
+    # SELECT DROPDOWN
+    # ================================================================
+
+    def select(
+        self,
+        target,
+        value,
+    ):
+
+        target = str(
+            target
+        ).strip()
+
+        value = str(
+            value
+        )
+
+        locator = self._resolve(
+            target
+        )
+
+        locator.first.select_option(
+            label=value
+        )
+
+        return {
+            "status": "success",
+            "action": "select",
+            "target": target,
+            "value": value,
+        }
+
+    # ================================================================
+    # CHECK
+    # ================================================================
+
+    def check(self, target):
+
+        target = str(
+            target
+        ).strip()
+
+        locator = self._resolve(
+            target
+        )
+
+        locator.first.check()
+
+        return {
+            "status": "success",
+            "action": "check",
+            "target": target,
+        }
+
+    # ================================================================
+    # UNCHECK
+    # ================================================================
+
+    def uncheck(self, target):
+
+        target = str(
+            target
+        ).strip()
+
+        locator = self._resolve(
+            target
+        )
+
+        locator.first.uncheck()
+
+        return {
+            "status": "success",
+            "action": "uncheck",
+            "target": target,
+        }
+
+    # ================================================================
+    # SCROLL
+    # ================================================================
+
+    def scroll(self, amount=700):
+
+        page = self.start()
+
+        amount = float(
+            amount
+        )
+
+        page.mouse.wheel(
+            0,
+            amount
+        )
+
+        return {
+            "status": "success",
+            "action": "scroll",
+            "amount": amount,
+            "url": page.url,
+        }
+
+    # ================================================================
+    # WAIT
+    # ================================================================
+
+    def wait(self, seconds=1):
+
+        seconds = max(
+            0,
+            float(seconds)
+        )
+
+        time.sleep(
+            seconds
+        )
+
+        return {
+            "status": "success",
+            "action": "wait",
+            "seconds": seconds,
+        }
+
+    # ================================================================
+    # BACK
+    # ================================================================
+
+    def back(self):
+
+        page = self.start()
+
+        try:
+
+            page.go_back(
+                wait_until="domcontentloaded",
+                timeout=20000,
+            )
+
+        except Exception:
+            # No previous history
+            pass
+
+        return self._telemetry()
+
+    # ================================================================
+    # FORWARD
+    # ================================================================
+
+    def forward(self):
+
+        page = self.start()
+
+        try:
+
+            page.go_forward(
+                wait_until="domcontentloaded",
+                timeout=20000,
+            )
+
+        except Exception:
+            pass
+
+        return self._telemetry()
+
+    # ================================================================
+    # RELOAD
+    # ================================================================
+
+    def reload(self):
+
+        page = self.start()
+
+        page.reload(
+            wait_until="domcontentloaded",
+            timeout=20000,
+        )
+
+        return self._telemetry()
+
+    # ================================================================
+    # NEW TAB
+    # ================================================================
+
+    def new_tab(self, url=None):
+
+        self.start()
+
+        page = self.context.new_page()
+
+        self.page = page
+
+        if url:
+
+            return self.open_url(
+                url
+            )
+
+        return {
+            "status": "success",
+            "action": "new_tab",
+            "url": page.url,
+            "title": "",
+        }
+
+    # ================================================================
+    # CLOSE TAB
+    # ================================================================
+
+    def close_tab(self):
+
+        page = self.start()
+
+        try:
+            page.close()
+        except Exception:
+            pass
+
+        pages = [
+            item
+            for item in self.context.pages
+            if not item.is_closed()
+        ]
+
+        if pages:
+
+            self.page = pages[-1]
+
+        else:
+
+            self.page = (
+                self.context.new_page()
+            )
+
+        return self._telemetry()
+
+    # ================================================================
+    # LIST TABS
+    # ================================================================
+
+    def tabs(self):
+
+        self.start()
+
+        results = []
+
+        for index, page in enumerate(
+            self.context.pages
+        ):
 
             try:
 
-                page.wait_for_load_state(
-                    "domcontentloaded",
-                    timeout=15000
+                title = (
+                    page.title()
+                    if not page.is_closed()
+                    else ""
                 )
-
-            except Exception as e:
-
-                print(
-                    f"⚠️ DOM wait skipped: {e}"
-                )
-
-            # -------------------------------------------------
-            # Title
-            # -------------------------------------------------
-
-            try:
-
-                title = page.title()
 
             except Exception:
 
                 title = ""
 
-            # -------------------------------------------------
-            # URL
-            # -------------------------------------------------
-
-            try:
-
-                url = page.url
-
-            except Exception:
-
-                url = ""
-
-            # -------------------------------------------------
-            # Body
-            # -------------------------------------------------
-
-            content = ""
-
-            try:
-
-                body = page.locator(
-                    "body"
-                )
-
-                body.wait_for(
-                    state="attached",
-                    timeout=10000
-                )
-
-                content = (
-                    body.inner_text(
-                        timeout=15000
-                    )
-                )
-
-            except Exception as e:
-
-                print(
-                    f"⚠️ Body extraction "
-                    f"failed: {e}"
-                )
-
-            # -------------------------------------------------
-            # Fallback to HTML
-            # -------------------------------------------------
-
-            if len(content.strip()) < 20:
-
-                try:
-
-                    content = (
-                        page.locator(
-                            "html"
-                        ).inner_text(
-                            timeout=10000
-                        )
-                    )
-
-                except Exception:
-
-                    pass
-
-            # -------------------------------------------------
-            # Output
-            # -------------------------------------------------
-
-            print(
-                f"📄 Page title: {title}"
+            results.append(
+                {
+                    "index": index,
+                    "url": page.url,
+                    "title": title,
+                    "closed": page.is_closed(),
+                }
             )
 
-            print(
-                f"🌐 Page URL: {url}"
+        return results
+
+    # ================================================================
+    # SWITCH TAB
+    # ================================================================
+
+    def switch_tab(self, index):
+
+        self.start()
+
+        index = int(
+            index
+        )
+
+        pages = self.context.pages
+
+        if index < 0:
+            raise IndexError(
+                "Tab index cannot be negative."
             )
 
-            print(
-                f"📄 Content length: "
-                f"{len(content)}"
+        if index >= len(pages):
+            raise IndexError(
+                f"Tab {index} does not exist. "
+                f"Available tabs: {len(pages)}"
             )
 
-            if len(content.strip()) < 20:
+        self.page = pages[index]
 
-                print(
-                    "⚠️ Page content is very small."
-                )
+        return self._telemetry()
 
-            return {
+    # ================================================================
+    # SCREENSHOT
+    # ================================================================
 
-                "title":
-                    title,
+    def screenshot(
+        self,
+        path=None,
+        full_page=True,
+    ):
 
-                "url":
-                    url,
+        page = self.start()
 
-                "content":
-                    content[:10000]
-            }
-
-        except Exception as e:
-
-            print(
-                f"❌ Read page failed: {e}"
+        destination = (
+            path
+            or str(
+                Path.home()
+                / "Downloads"
+                / "paios_browser.png"
             )
+        )
 
-            return {
+        access_controller.authorize(
+            "filesystem_write",
+            target=destination,
+        )
 
-                "title": "",
+        page.screenshot(
+            path=destination,
+            full_page=bool(
+                full_page
+            ),
+        )
 
-                "url": "",
+        return {
+            "status": "success",
+            "action": "screenshot",
+            "path": destination,
+            "url": page.url,
+        }
 
-                "content": "",
+    # ================================================================
+    # READ PAGE
+    # ================================================================
 
-                "error":
-                    str(e)
-            }
+    def read_page(self):
 
-    # =========================================================
+        page = self.start()
+
+        text = page.locator(
+            "body"
+        ).inner_text(
+            timeout=15000
+        )
+
+        return {
+            "status": "success",
+            "action": "read",
+            "url": page.url,
+            "title": page.title(),
+            "content": text[:30000],
+        }
+
+    # ================================================================
+    # FIND ELEMENT
+    # ================================================================
+
+    def find(self, target):
+
+        target = str(
+            target
+        ).strip()
+
+        locator = self._resolve(
+            target
+        )
+
+        return {
+            "status": "success",
+            "action": "find",
+            "target": target,
+            "count": locator.count(),
+        }
+
+    # ================================================================
     # CURRENT URL
-    # =========================================================
+    # ================================================================
 
     def get_current_url(self):
 
-        if self._session_alive():
+        return self.start().url
 
-            try:
-
-                return self.page.url
-
-            except Exception:
-
-                pass
-
-        return (
-            "No active browser session."
-        )
-
-    # =========================================================
+    # ================================================================
     # CURRENT PAGE
-    # =========================================================
+    # ================================================================
 
     def get_page(self):
 
-        if self._session_alive():
-
-            return self.page
-
         return self.start()
 
-    # =========================================================
-    # OPEN YOUTUBE
-    # =========================================================
+    # ================================================================
+    # CURRENT TITLE
+    # ================================================================
+
+    def get_page_title(self):
+
+        return self.start().title()
+
+    # ================================================================
+    # SITE SHORTCUTS
+    # ================================================================
 
     def open_youtube(self):
 
@@ -1946,19 +1818,11 @@ class BrowserAutomation:
             "https://www.youtube.com"
         )
 
-    # =========================================================
-    # OPEN CHATGPT
-    # =========================================================
-
     def open_chatgpt(self):
 
         return self.open_url(
             "https://chatgpt.com"
         )
-
-    # =========================================================
-    # OPEN GITHUB
-    # =========================================================
 
     def open_github(self):
 
@@ -1966,19 +1830,11 @@ class BrowserAutomation:
             "https://github.com"
         )
 
-    # =========================================================
-    # OPEN LINKEDIN
-    # =========================================================
-
     def open_linkedin(self):
 
         return self.open_url(
             "https://www.linkedin.com"
         )
-
-    # =========================================================
-    # OPEN GMAIL
-    # =========================================================
 
     def open_gmail(self):
 
@@ -1986,108 +1842,81 @@ class BrowserAutomation:
             "https://mail.google.com"
         )
 
-    # =========================================================
-    # CLEANUP
-    # =========================================================
+    def open_reddit(self):
 
-    def _cleanup(self):
+        return self.open_url(
+            "https://www.reddit.com"
+        )
 
-        # -----------------------------------------------------
-        # Page
-        # -----------------------------------------------------
+    def open_stackoverflow(self):
 
+        return self.open_url(
+            "https://stackoverflow.com"
+        )
+
+    def open_amazon(self):
+
+        return self.open_url(
+            "https://www.amazon.in"
+        )
+
+    # ================================================================
+    # CLOSE BROWSER
+    # ================================================================
+
+    def close(self):
+
+        # Close current page
         try:
 
-            if (
-                self.page
-                and not self.page.is_closed()
-            ):
-
+            if self.page:
                 self.page.close()
 
         except Exception:
-
             pass
 
-        # -----------------------------------------------------
-        # Context
-        # -----------------------------------------------------
-
+        # Close context
         try:
 
             if self.context:
-
                 self.context.close()
 
         except Exception:
-
             pass
 
-        # -----------------------------------------------------
-        # Browser
-        # -----------------------------------------------------
-
+        # Close browser
         try:
 
-            if (
-                self.browser
-                and self.browser.is_connected()
-            ):
-
+            if self.browser:
                 self.browser.close()
 
         except Exception:
-
             pass
 
-        # -----------------------------------------------------
-        # Playwright
-        # -----------------------------------------------------
-
+        # Stop Playwright
         try:
 
-            if self.playwright:
-
-                self.playwright.stop()
+            if self.pw:
+                self.pw.stop()
 
         except Exception:
-
             pass
-
-        # -----------------------------------------------------
-        # Reset state
-        # -----------------------------------------------------
 
         self.page = None
         self.context = None
         self.browser = None
-        self.playwright = None
+        self.pw = None
 
         self.search_results = []
 
-    # =========================================================
-    # CLOSE
-    # =========================================================
-
-    def close(self):
-
-        print(
-            "🔴 Closing browser..."
-        )
-
-        self._cleanup()
-
-        print(
-            "✅ Browser closed."
-        )
-
-        return (
-            "Browser closed."
-        )
+        return {
+            "status": "success",
+            "message": "Browser closed",
+        }
 
 
-# =============================================================
-# GLOBAL INSTANCE
-# =============================================================
+# ================================================================
+# SINGLETON
+# ================================================================
 
 browser_automation = BrowserAutomation()

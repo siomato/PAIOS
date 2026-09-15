@@ -1,49 +1,24 @@
 # ============================================================
 # app/core/agent_state.py
 #
-# PAIO AGENT STATE
+# PAIOS / ULTRON AGENT STATE
 #
 # Purpose:
+#   Single source of truth for autonomous execution.
 #
-# Maintain the current state of an autonomous task.
+# Responsibilities:
+#   - Track task
+#   - Track plan
+#   - Track current action
+#   - Track completed steps
+#   - Track failed step
+#   - Track action history
+#   - Track observations
+#   - Track browser state
+#   - Track execution status
 #
-# Phase 2:
-#
-# Goal
-#   ↓
-# Plan
-#   ↓
-# Execute
-#   ↓
-# Observe
-#   ↓
-# Update State
-#   ↓
-# Decide
-#
-# V2 ADDITION:
-#
-# AgentState
-#      ↓
-# TaskContext
-#
-# AgentState remains the compatibility layer used by the
-# existing PAIOS modules.
-#
-# TaskContext provides richer task memory:
-#
-#   objective
-#   plan
-#   completed steps
-#   failed steps
-#   observations
-#   action history
-#   recovery history
-#   progress
+# No Playwright objects belong here.
 # ============================================================
-
-
-from app.core.task_context import TaskContext
 
 
 class AgentState:
@@ -54,55 +29,72 @@ class AgentState:
 
     def __init__(
         self,
-        user_goal: str = ""
+        user_message=None,
+        current_plan=None,
+        plan_id=None
     ):
 
         # ----------------------------------------------------
-        # TASK INFORMATION
+        # TASK
         # ----------------------------------------------------
 
-        self.user_goal = (
-            user_goal.strip()
-            if user_goal
+        self.user_message = (
+            user_message
+            if user_message is not None
             else ""
         )
 
-        self.status = "initialized"
-
         # ----------------------------------------------------
-        # TASK CONTEXT
-        #
-        # New V2 memory layer.
-        #
-        # None is allowed when AgentState is created without
-        # a goal. This preserves the original behavior.
+        # PLAN
         # ----------------------------------------------------
 
-        self.task_context = None
+        self.current_plan = (
+            list(current_plan)
+            if isinstance(current_plan, list)
+            else []
+        )
 
-        if self.user_goal:
-
-            self.task_context = TaskContext(
-                objective=self.user_goal
-            )
+        self.plan_id = plan_id
 
         # ----------------------------------------------------
-        # PLANNING INFORMATION
+        # EXECUTION POINTER
         # ----------------------------------------------------
-
-        self.current_plan = []
 
         self.current_step = 0
 
-        self.completed_steps = []
+        self.current_action = None
 
         # ----------------------------------------------------
-        # FAILURE INFORMATION
+        # PROGRESS
         # ----------------------------------------------------
+
+        self.completed_steps = []
 
         self.failed_step = None
 
+        # ----------------------------------------------------
+        # EXECUTION RESULTS
+        # ----------------------------------------------------
+
+        self.last_result = None
+
+        self.last_action_result = None
+
+        self.action_result = None
+
+        self.last_execution_result = None
+
+        self.execution_result = None
+
         self.last_error = None
+
+        # ----------------------------------------------------
+        # HISTORY
+        # ----------------------------------------------------
+
+        self.action_history = []
+
+        self.observations = []
 
         # ----------------------------------------------------
         # BROWSER STATE
@@ -112,23 +104,10 @@ class AgentState:
 
         self.page_title = None
 
-        # ----------------------------------------------------
-        # OBSERVATIONS
-        # ----------------------------------------------------
-
-        self.observations = []
+        self.browser_state = {}
 
         # ----------------------------------------------------
-        # ACTION HISTORY
-        #
-        # New V2 compatibility history.
-        # Existing modules do not depend on this yet.
-        # ----------------------------------------------------
-
-        self.action_history = []
-
-        # ----------------------------------------------------
-        # RECOVERY INFORMATION
+        # RECOVERY
         # ----------------------------------------------------
 
         self.retry_count = 0
@@ -138,112 +117,38 @@ class AgentState:
         self.replan_history = []
 
         # ----------------------------------------------------
-        # RECOVERY HISTORY
+        # GLOBAL STATUS
         #
-        # New V2 memory layer.
+        # Possible values:
+        #
+        #   idle
+        #   running
+        #   completed
+        #   failed
         # ----------------------------------------------------
 
-        self.recovery_history = []
+        self.status = "idle"
+
+        # ----------------------------------------------------
+        # VERSION
+        # ----------------------------------------------------
+
+        self.state_version = 1
 
     # ========================================================
-    # INTERNAL HELPERS
+    # TASK
     # ========================================================
 
-    def _ensure_task_context(self):
-
-        if self.task_context is None:
-
-            if not self.user_goal:
-
-                raise ValueError(
-                    "Cannot create TaskContext without "
-                    "a user goal."
-                )
-
-            self.task_context = TaskContext(
-                objective=self.user_goal
-            )
-
-    # ========================================================
-
-    def _sync_task_context_status(self):
-
-        if self.task_context is None:
-            return
-
-        if self.status == "running":
-
-            if self.task_context.status != "running":
-
-                self.task_context.start()
-
-        elif self.status == "complete":
-
-            self.task_context.complete()
-
-        elif self.status == "failed":
-
-            reason = (
-                self.last_error
-                or
-                "AgentState reports failure."
-            )
-
-            self.task_context.fail(
-                reason
-            )
-
-        elif self.status == "paused":
-
-            self.task_context.pause()
-
-    # ========================================================
-    # GOAL
-    # ========================================================
-
-    def set_goal(
+    def set_task(
         self,
-        user_goal: str
+        user_message
     ):
 
-        if not isinstance(
-            user_goal,
-            str
-        ):
-
-            raise ValueError(
-                "User goal must be a string."
-            )
-
-        user_goal = user_goal.strip()
-
-        if not user_goal:
-
-            raise ValueError(
-                "User goal cannot be empty."
-            )
-
-        self.user_goal = user_goal
-
-        # ----------------------------------------------------
-        # Create or replace TaskContext for the new task.
-        # ----------------------------------------------------
-
-        self.task_context = TaskContext(
-            objective=user_goal
+        self.user_message = (
+            user_message
+            if user_message is not None
+            else ""
         )
-
-    # ========================================================
-    # START TASK
-    # ========================================================
-
-    def start_task(self):
-
-        self._ensure_task_context()
-
-        self.status = "running"
-
-        self.task_context.start()
 
     # ========================================================
     # PLAN
@@ -251,21 +156,26 @@ class AgentState:
 
     def set_plan(
         self,
-        plan
+        plan,
+        plan_id=None
     ):
 
         if not isinstance(
             plan,
             list
         ):
-
             raise ValueError(
                 "Plan must be a list."
             )
 
-        self.current_plan = plan
+        self.current_plan = list(plan)
+
+        if plan_id is not None:
+            self.plan_id = plan_id
 
         self.current_step = 0
+
+        self.current_action = None
 
         self.completed_steps = []
 
@@ -273,15 +183,7 @@ class AgentState:
 
         self.last_error = None
 
-        # ----------------------------------------------------
-        # Synchronize TaskContext.
-        # ----------------------------------------------------
-
-        self._ensure_task_context()
-
-        self.task_context.set_plan(
-            plan
-        )
+        self.status = "running"
 
     # ========================================================
     # CURRENT STEP
@@ -292,9 +194,19 @@ class AgentState:
         step_number
     ):
 
-        if not isinstance(
-            step_number,
-            int
+        if step_number is None:
+            self.current_step = 0
+            return
+
+        try:
+
+            step_number = int(
+                step_number
+            )
+
+        except (
+            TypeError,
+            ValueError
         ):
 
             raise ValueError(
@@ -302,60 +214,308 @@ class AgentState:
             )
 
         if step_number < 0:
-
             raise ValueError(
                 "Step number cannot be negative."
             )
 
-        self.current_step = step_number
+        self.current_step = (
+            step_number
+        )
 
         # ----------------------------------------------------
-        # Keep TaskContext aligned.
+        # Automatically attach current action
         # ----------------------------------------------------
 
-        if self.task_context is not None:
+        index = step_number - 1
 
-            self.task_context.current_step = (
-                step_number
+        if (
+            0 <= index
+            < len(self.current_plan)
+        ):
+
+            self.current_action = (
+                self.current_plan[index]
             )
 
     # ========================================================
-    # COMPLETED STEP
+    # CURRENT ACTION
+    # ========================================================
+
+    def set_current_action(
+        self,
+        action
+    ):
+
+        if action is not None and not isinstance(
+            action,
+            dict
+        ):
+
+            raise ValueError(
+                "Current action must be a dictionary."
+            )
+
+        self.current_action = action
+
+    # ========================================================
+    # ACTION RECORD
+    # ========================================================
+
+    def record_action(
+        self,
+        action,
+        result=None,
+        success=False,
+        error=None
+    ):
+
+        # ----------------------------------------------------
+        # Normalize
+        # ----------------------------------------------------
+
+        if not isinstance(
+            action,
+            dict
+        ):
+
+            action = {
+                "action": str(action)
+            }
+
+        # ----------------------------------------------------
+        # Determine step
+        # ----------------------------------------------------
+
+        step_number = (
+            action.get(
+                "step_index"
+            )
+        )
+
+        if step_number is None:
+
+            step_number = (
+                self.current_step
+            )
+
+        # ----------------------------------------------------
+        # Record current action
+        # ----------------------------------------------------
+
+        self.current_action = (
+            action
+        )
+
+        # ----------------------------------------------------
+        # Store result in all compatibility fields
+        # ----------------------------------------------------
+
+        self.last_result = result
+
+        self.last_action_result = result
+
+        self.action_result = result
+
+        self.last_execution_result = result
+
+        self.execution_result = result
+
+        # ----------------------------------------------------
+        # Error
+        # ----------------------------------------------------
+
+        if error is not None:
+
+            self.last_error = str(
+                error
+            )
+
+        elif isinstance(
+            result,
+            dict
+        ):
+
+            result_error = result.get(
+                "error"
+            )
+
+            if result_error:
+
+                self.last_error = str(
+                    result_error
+                )
+
+        # ----------------------------------------------------
+        # Normalize success
+        # ----------------------------------------------------
+
+        if success:
+
+            self.status = "running"
+
+        # ----------------------------------------------------
+        # History entry
+        # ----------------------------------------------------
+
+        history_entry = {
+
+            "step": step_number,
+
+            "action": dict(
+                action
+            ),
+
+            "result": result,
+
+            "success": bool(
+                success
+            ),
+
+            "error": (
+                str(error)
+                if error is not None
+                else None
+            )
+        }
+
+        self.action_history.append(
+            history_entry
+        )
+
+    # ========================================================
+    # COMPLETE STEP
     # ========================================================
 
     def mark_step_completed(
         self,
         step_number,
-        step=None,
-        result=None
+        action=None
     ):
 
-        record = {
-            "step": step_number,
-            "action": step
-        }
+        try:
 
-        # ----------------------------------------------------
-        # Preserve original AgentState behavior.
-        # ----------------------------------------------------
-
-        self.completed_steps.append(
-            record
-        )
-
-        self.current_step = (
-            step_number + 1
-        )
-
-        # ----------------------------------------------------
-        # Synchronize TaskContext.
-        # ----------------------------------------------------
-
-        if self.task_context is not None:
-
-            self.task_context.complete_current_step(
-                result=result
+            step_number = int(
+                step_number
             )
+
+        except (
+            TypeError,
+            ValueError
+        ):
+
+            raise ValueError(
+                "Step number must be an integer."
+            )
+
+        if step_number <= 0:
+
+            raise ValueError(
+                "Step number must be greater than zero."
+            )
+
+        # ----------------------------------------------------
+        # Prevent duplicate completed steps
+        # ----------------------------------------------------
+
+        already_completed = False
+
+        for item in self.completed_steps:
+
+            if isinstance(
+                item,
+                dict
+            ):
+
+                if item.get(
+                    "step"
+                ) == step_number:
+
+                    already_completed = True
+
+                    break
+
+            elif item == step_number:
+
+                already_completed = True
+
+                break
+
+        # ----------------------------------------------------
+        # Add completion record
+        # ----------------------------------------------------
+
+        if not already_completed:
+
+            completion_record = {
+
+                "step": step_number,
+
+                "action": (
+                    dict(action)
+                    if isinstance(
+                        action,
+                        dict
+                    )
+                    else action
+                )
+            }
+
+            self.completed_steps.append(
+                completion_record
+            )
+
+        # ----------------------------------------------------
+        # Keep ordered
+        # ----------------------------------------------------
+
+        self.completed_steps.sort(
+            key=lambda item:
+                item.get(
+                    "step",
+                    0
+                )
+                if isinstance(
+                    item,
+                    dict
+                )
+                else item
+        )
+
+        # ----------------------------------------------------
+        # Clear failure
+        # ----------------------------------------------------
+
+        if self.failed_step == step_number:
+
+            self.failed_step = None
+
+        # ----------------------------------------------------
+        # Update current pointer
+        # ----------------------------------------------------
+
+        self.current_step = step_number
+
+        # ----------------------------------------------------
+        # Determine task completion
+        # ----------------------------------------------------
+
+        if (
+            self.current_plan
+            and
+            len(
+                self.completed_steps
+            )
+            >=
+            len(
+                self.current_plan
+            )
+        ):
+
+            self.status = "completed"
+
+        else:
+
+            self.status = "running"
 
     # ========================================================
     # FAILED STEP
@@ -367,21 +527,30 @@ class AgentState:
         error
     ):
 
-        self.failed_step = step_number
+        try:
+
+            step_number = int(
+                step_number
+            )
+
+        except (
+            TypeError,
+            ValueError
+        ):
+
+            raise ValueError(
+                "Step number must be an integer."
+            )
+
+        self.failed_step = (
+            step_number
+        )
 
         self.last_error = str(
             error
         )
 
-        # ----------------------------------------------------
-        # Synchronize TaskContext.
-        # ----------------------------------------------------
-
-        if self.task_context is not None:
-
-            self.task_context.fail_current_step(
-                error=self.last_error
-            )
+        self.status = "failed"
 
     # ========================================================
     # OBSERVATION
@@ -392,73 +561,18 @@ class AgentState:
         observation
     ):
 
-        if observation is None:
+        if not isinstance(
+            observation,
+            dict
+        ):
 
-            return
-
-        # ----------------------------------------------------
-        # Existing AgentState behavior.
-        # ----------------------------------------------------
+            observation = {
+                "value": observation
+            }
 
         self.observations.append(
-            observation
+            dict(observation)
         )
-
-        # ----------------------------------------------------
-        # TaskContext memory.
-        # ----------------------------------------------------
-
-        if self.task_context is not None:
-
-            self.task_context.add_observation(
-                observation
-            )
-
-    # ========================================================
-    # ACTION HISTORY
-    # ========================================================
-
-    def record_action(
-        self,
-        action,
-        result=None,
-        success=True,
-        error=None
-    ):
-
-        record = {
-            "step_index":
-                self.current_step,
-
-            "action":
-                action,
-
-            "result":
-                result,
-
-            "success":
-                success,
-
-            "error":
-                error
-        }
-
-        self.action_history.append(
-            record
-        )
-
-        # ----------------------------------------------------
-        # TaskContext memory.
-        # ----------------------------------------------------
-
-        if self.task_context is not None:
-
-            self.task_context.record_action(
-                action=action,
-                result=result,
-                success=success,
-                error=error
-            )
 
     # ========================================================
     # BROWSER STATE
@@ -472,33 +586,56 @@ class AgentState:
 
         if current_url is not None:
 
-            self.current_url = current_url
+            self.current_url = str(
+                current_url
+            )
 
         if page_title is not None:
 
-            self.page_title = page_title
-
-        # ----------------------------------------------------
-        # Browser state is also useful as an observation.
-        # ----------------------------------------------------
-
-        if self.task_context is not None:
-
-            self.task_context.add_observation(
-                {
-                    "type": "browser_state",
-
-                    "current_url":
-                        self.current_url,
-
-                    "page_title":
-                        self.page_title
-                }
+            self.page_title = str(
+                page_title
             )
+
+        self.browser_state = {
+
+            "current_url":
+                self.current_url,
+
+            "page_title":
+                self.page_title
+        }
 
     # ========================================================
     # RETRY
     # ========================================================
+
+    def set_retry_count(
+        self,
+        count
+    ):
+
+        try:
+
+            count = int(
+                count
+            )
+
+        except (
+            TypeError,
+            ValueError
+        ):
+
+            raise ValueError(
+                "Retry count must be an integer."
+            )
+
+        if count < 0:
+
+            raise ValueError(
+                "Retry count cannot be negative."
+            )
+
+        self.retry_count = count
 
     def increment_retry(
         self
@@ -506,211 +643,222 @@ class AgentState:
 
         self.retry_count += 1
 
-        # ----------------------------------------------------
-        # Record retry as an action/recovery observation.
-        # ----------------------------------------------------
-
-        if self.task_context is not None:
-
-            self.task_context.record_recovery(
-                strategy="retry",
-                result={
-                    "retry_count":
-                        self.retry_count
-                },
-                success=False
-            )
+        return self.retry_count
 
     # ========================================================
-    # REPLAN
+    # REPLANNING
     # ========================================================
 
     def record_replan(
         self,
-        old_plan,
-        new_plan,
-        reason=""
+        old_plan=None,
+        new_plan=None,
+        reason=None
     ):
 
+        self.replans_used += 1
+
         record = {
-            "old_plan": old_plan,
-            "new_plan": new_plan,
+
+            "replan_number":
+                self.replans_used,
+
+            "old_plan":
+                (
+                    list(old_plan)
+                    if isinstance(
+                        old_plan,
+                        list
+                    )
+                    else old_plan
+                ),
+
+            "new_plan":
+                (
+                    list(new_plan)
+                    if isinstance(
+                        new_plan,
+                        list
+                    )
+                    else new_plan
+                ),
+
             "reason": reason
         }
-
-        # ----------------------------------------------------
-        # Preserve existing AgentState behavior.
-        # ----------------------------------------------------
 
         self.replan_history.append(
             record
         )
 
-        self.replans_used += 1
-
-        # ----------------------------------------------------
-        # TaskContext recovery memory.
-        # ----------------------------------------------------
-
-        if self.task_context is not None:
-
-            self.task_context.record_recovery(
-                strategy="replan",
-                result={
-                    "old_plan": old_plan,
-                    "new_plan": new_plan
-                },
-                success=True,
-                error=reason
-            )
-
     # ========================================================
-    # STATUS
+    # RESET CURRENT ACTION
     # ========================================================
 
-    def set_status(
+    def clear_current_action(
+        self
+    ):
+
+        self.current_action = None
+
+    # ========================================================
+    # CLEAR FAILURE
+    # ========================================================
+
+    def clear_failure(
+        self
+    ):
+
+        self.failed_step = None
+
+        self.last_error = None
+
+        if self.status == "failed":
+
+            self.status = "running"
+
+    # ========================================================
+    # COMPLETE TASK
+    # ========================================================
+
+    def mark_completed(
+        self
+    ):
+
+        self.failed_step = None
+
+        self.last_error = None
+
+        self.status = "completed"
+
+    # ========================================================
+    # FAIL TASK
+    # ========================================================
+
+    def mark_failed(
         self,
-        status
+        error=None
     ):
 
-        if not isinstance(
-            status,
-            str
-        ):
+        if error is not None:
 
-            raise ValueError(
-                "Status must be a string."
+            self.last_error = str(
+                error
             )
 
-        status = status.strip()
-
-        self.status = status
-
-        # ----------------------------------------------------
-        # Synchronize TaskContext.
-        # ----------------------------------------------------
-
-        if self.task_context is not None:
-
-            if status == "running":
-
-                self.task_context.start()
-
-            elif status == "complete":
-
-                self.task_context.complete()
-
-            elif status == "failed":
-
-                self.task_context.fail(
-                    self.last_error
-                    or
-                    "AgentState reports failure."
-                )
-
-            elif status == "paused":
-
-                self.task_context.pause()
+        self.status = "failed"
 
     # ========================================================
-    # TASK CONTEXT
+    # PROGRESS
     # ========================================================
 
-    def get_task_context(
+    def completed_count(
         self
     ):
 
-        self._ensure_task_context()
+        return len(
+            self.completed_steps
+        )
 
-        return self.task_context
-
-    # ========================================================
-
-    def task_progress(
+    def total_steps(
         self
     ):
 
-        if self.task_context is None:
+        return len(
+            self.current_plan
+        )
 
-            total = len(
-                self.current_plan
-            )
-
-            completed = len(
-                self.completed_steps
-            )
-
-            percentage = (
-                0
-                if total == 0
-                else
-                int(
-                    (
-                        completed
-                        /
-                        total
-                    )
-                    * 100
-                )
-            )
-
-            return {
-                "current_step":
-                    self.current_step,
-
-                "total_steps":
-                    total,
-
-                "completed_steps":
-                    completed,
-
-                "failed_steps":
-                    (
-                        1
-                        if self.failed_step is not None
-                        else
-                        0
-                    ),
-
-                "percentage":
-                    percentage
-            }
-
-        return self.task_context.progress()
-
-    # ========================================================
-    # SNAPSHOT
-    # ========================================================
-
-    def snapshot(
+    def remaining_steps(
         self
     ):
 
-        snapshot = {
-            # ------------------------------------------------
-            # Existing AgentState fields
-            # ------------------------------------------------
+        return max(
+            0,
+            self.total_steps()
+            -
+            self.completed_count()
+        )
 
-            "user_goal":
-                self.user_goal,
+    # ========================================================
+    # STATUS HELPERS
+    # ========================================================
 
-            "status":
-                self.status,
+    def is_complete(
+        self
+    ):
+
+        return (
+            self.status
+            == "completed"
+        )
+
+    def is_failed(
+        self
+    ):
+
+        return (
+            self.status
+            == "failed"
+        )
+
+    def is_running(
+        self
+    ):
+
+        return (
+            self.status
+            == "running"
+        )
+
+    # ========================================================
+    # SERIALIZATION
+    # ========================================================
+
+    def to_dict(
+        self
+    ):
+
+        return {
+
+            "user_message":
+                self.user_message,
+
+            "plan_id":
+                self.plan_id,
 
             "current_plan":
-                self.current_plan.copy(),
+                list(
+                    self.current_plan
+                ),
 
             "current_step":
                 self.current_step,
 
+            "current_action":
+                self.current_action,
+
             "completed_steps":
-                self.completed_steps.copy(),
+                list(
+                    self.completed_steps
+                ),
 
             "failed_step":
                 self.failed_step,
 
+            "last_result":
+                self.last_result,
+
             "last_error":
                 self.last_error,
+
+            "action_history":
+                list(
+                    self.action_history
+                ),
+
+            "observations":
+                list(
+                    self.observations
+                ),
 
             "current_url":
                 self.current_url,
@@ -718,8 +866,10 @@ class AgentState:
             "page_title":
                 self.page_title,
 
-            "observations":
-                self.observations.copy(),
+            "browser_state":
+                dict(
+                    self.browser_state
+                ),
 
             "retry_count":
                 self.retry_count,
@@ -728,163 +878,81 @@ class AgentState:
                 self.replans_used,
 
             "replan_history":
-                self.replan_history.copy(),
-
-            # ------------------------------------------------
-            # New V2 fields
-            # ------------------------------------------------
-
-            "action_history":
-                self.action_history.copy(),
-
-            "recovery_history":
-                self.recovery_history.copy(),
-
-            "task_context":
-                (
-                    self.task_context.to_dict()
-                    if self.task_context is not None
-                    else None
-                )
-        }
-
-        return snapshot
-
-    # ========================================================
-    # SUMMARY
-    # ========================================================
-
-    def summary(
-        self
-    ):
-
-        progress = (
-            self.task_progress()
-        )
-
-        return {
-            "goal":
-                self.user_goal,
+                list(
+                    self.replan_history
+                ),
 
             "status":
                 self.status,
 
-            "current_step":
-                progress["current_step"],
-
-            "total_steps":
-                progress["total_steps"],
-
-            "completed":
-                progress["completed_steps"],
-
-            "failed":
-                progress["failed_steps"],
-
-            "progress":
-                progress["percentage"],
-
-            "observations":
-                len(self.observations),
-
-            "actions":
-                len(self.action_history),
-
-            "retries":
-                self.retry_count,
-
-            "replans":
-                self.replans_used
+            "state_version":
+                self.state_version
         }
 
     # ========================================================
     # DEBUG
     # ========================================================
 
-    def print_state(
+    def summary(
         self
     ):
 
-        print("\n")
-        print("=" * 60)
-        print("🧠 PAIO AGENT STATE")
-        print("=" * 60)
+        return {
 
-        print(
-            f"Goal          : {self.user_goal}"
+            "status":
+                self.status,
+
+            "current_step":
+                self.current_step,
+
+            "completed":
+                self.completed_count(),
+
+            "total":
+                self.total_steps(),
+
+            "remaining":
+                self.remaining_steps(),
+
+            "failed_step":
+                self.failed_step,
+
+            "retry_count":
+                self.retry_count,
+
+            "replans_used":
+                self.replans_used,
+
+            "current_url":
+                self.current_url,
+
+            "page_title":
+                self.page_title
+        }
+
+    def __repr__(
+        self
+    ):
+
+        return (
+            "AgentState("
+            f"status={self.status!r}, "
+            f"step={self.current_step}, "
+            f"completed="
+            f"{self.completed_count()}/"
+            f"{self.total_steps()}, "
+            f"failed_step="
+            f"{self.failed_step!r})"
         )
-
-        print(
-            f"Status        : {self.status}"
-        )
-
-        print(
-            f"Current step  : {self.current_step}"
-        )
-
-        print(
-            f"Completed     : {len(self.completed_steps)}"
-        )
-
-        print(
-            f"Failed step   : {self.failed_step}"
-        )
-
-        print(
-            f"Current URL   : {self.current_url}"
-        )
-
-        print(
-            f"Page title    : {self.page_title}"
-        )
-
-        print(
-            f"Observations  : {len(self.observations)}"
-        )
-
-        print(
-            f"Actions       : {len(self.action_history)}"
-        )
-
-        print(
-            f"Retries       : {self.retry_count}"
-        )
-
-        print(
-            f"Replans       : {self.replans_used}"
-        )
-
-        # ----------------------------------------------------
-        # TaskContext summary
-        # ----------------------------------------------------
-
-        if self.task_context is not None:
-
-            context_summary = (
-                self.task_context.summary()
-            )
-
-            print(
-                f"Task ID       : "
-                f"{context_summary['task_id']}"
-            )
-
-            print(
-                f"Recoveries    : "
-                f"{context_summary['recoveries']}"
-            )
-
-        print("=" * 60)
 
 
 # ============================================================
-# GLOBAL FACTORY
+# GLOBAL INSTANCE
 # ============================================================
 
-def create_agent_state(
-    user_goal: str
-):
+agent_state = AgentState()
 
-    return AgentState(
-        user_goal
-    )
+
+print(
+    "🧠 AGENT STATE MODULE LOADED 🧠"
+)

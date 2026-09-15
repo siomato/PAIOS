@@ -9,10 +9,10 @@
         },
         {
             "task": "Search the web for Python asyncio tutorials.",
-            "status": "completed",
-            "steps": 2,
+            "status": "running",
+            "steps": 0,
             "replans_used": 0,
-            "timestamp": "2026-08-20T08:20:18.568529+00:00"
+            "timestamp": "2026-09-14T10:57:35.692925+00:00"
         },
         {
             "task": "Open python.org and read the documentation",
@@ -35,7 +35,7 @@
             "status": "completed",
             "steps": 2,
             "replans_used": 0,
-            "timestamp": "2026-08-20T08:22:38.836452+00:00",
+            "timestamp": "2026-08-28T06:07:56.466687+00:00",
             "occurrences": 1
         },
         {
@@ -59,7 +59,7 @@
             "status": "completed",
             "steps": 1,
             "replans_used": 0,
-            "timestamp": "2026-08-22T05:17:14.624264+00:00",
+            "timestamp": "2026-08-27T09:02:05.328148+00:00",
             "occurrences": 1
         },
         {
@@ -67,15 +67,15 @@
             "status": "completed",
             "steps": 2,
             "replans_used": 0,
-            "timestamp": "2026-08-20T16:35:28.973487+00:00",
+            "timestamp": "2026-08-27T08:37:17.370797+00:00",
             "occurrences": 1
         },
         {
             "task": "Open https://www.python.org then click Documentation then read the page",
             "status": "completed",
-            "steps": 2,
+            "steps": 3,
             "replans_used": 0,
-            "timestamp": "2026-08-22T05:18:09.830303+00:00",
+            "timestamp": "2026-08-26T17:09:41.132663+00:00",
             "occurrences": 1
         },
         {
@@ -96,10 +96,10 @@
         },
         {
             "task": "Click Documentation",
-            "status": "running",
-            "steps": 0,
+            "status": "completed",
+            "steps": 2,
             "replans_used": 0,
-            "timestamp": "2026-08-20T16:44:51.322439+00:00",
+            "timestamp": "2026-08-27T07:57:11.221467+00:00",
             "occurrences": 1
         },
         {
@@ -107,7 +107,7 @@
             "status": "completed",
             "steps": 2,
             "replans_used": 0,
-            "timestamp": "2026-08-24T17:08:57.472739+00:00",
+            "timestamp": "2026-08-28T07:52:11.737583+00:00",
             "occurrences": 1
         },
         {
@@ -177,9 +177,9 @@
         {
             "task": "Open Google and search for Python automation tutorials.",
             "status": "completed",
-            "steps": 2,
+            "steps": 1,
             "replans_used": 0,
-            "timestamp": "2026-08-22T05:17:47.448159+00:00",
+            "timestamp": "2026-09-14T07:17:19.701946+00:00",
             "occurrences": 1
         },
         {
@@ -193,9 +193,9 @@
         {
             "task": "Open YouTube and search for Python programming tutorials.",
             "status": "completed",
-            "steps": 3,
+            "steps": 2,
             "replans_used": 0,
-            "timestamp": "2026-08-22T06:20:47.721005+00:00",
+            "timestamp": "2026-09-14T11:00:43.091473+00:00",
             "occurrences": 1
         },
         {
@@ -227,7 +227,7 @@
             "status": "completed",
             "steps": 1,
             "replans_used": 0,
-            "timestamp": "2026-08-24T17:09:05.679490+00:00",
+            "timestamp": "2026-09-14T07:23:45.970853+00:00",
             "occurrences": 1
         },
         {
@@ -235,7 +235,7 @@
             "status": "completed",
             "steps": 3,
             "replans_used": 0,
-            "timestamp": "2026-08-24T17:06:13.925775+00:00",
+            "timestamp": "2026-08-28T08:33:53.014106+00:00",
             "occurrences": 1
         },
         {
@@ -275,7 +275,7 @@
             "status": "completed",
             "steps": 3,
             "replans_used": 0,
-            "timestamp": "2026-08-24T10:07:18.844004+00:00",
+            "timestamp": "2026-08-25T08:51:53.037472+00:00",
             "occurrences": 1
         },
         {
@@ -288,10 +288,10 @@
         },
         {
             "task": "open google , fill the search box with Mail , press the enter , open the first result",
-            "status": "running",
-            "steps": 0,
+            "status": "completed",
+            "steps": 3,
             "replans_used": 0,
-            "timestamp": "2026-08-22T07:52:56.483032+00:00",
+            "timestamp": "2026-08-25T04:10:04.973414+00:00",
             "occurrences": 1
         },
         {
@@ -339,7 +339,7 @@
             "status": "completed",
             "steps": 1,
             "replans_used": 0,
-            "timestamp": "2026-08-24T17:01:38.366449+00:00",
+            "timestamp": "2026-08-25T04:02:29.167944+00:00",
             "occurrences": 1
         },
         {
@@ -388,6 +388,238 @@
             "steps": 0,
             "replans_used": 0,
             "timestamp": "2026-08-24T17:09:54.681587+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open Python.org",
+            "status": "completed",
+            "steps": 1,
+            "replans_used": 0,
+            "timestamp": "2026-08-25T04:02:55.927225+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open YouTube and click the search box",
+            "status": "completed",
+            "steps": 1,
+            "replans_used": 0,
+            "timestamp": "2026-08-25T14:04:14.053399+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "open youtube , fill the search box with Thatha Thatha Konjo Podi kudu, and press enter",
+            "status": "completed",
+            "steps": 3,
+            "replans_used": 0,
+            "timestamp": "2026-08-25T04:08:50.497979+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "open W3 schools",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-25T04:10:35.084755+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "open google , click the search box",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-25T04:27:29.709699+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "type Minecraft",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-25T14:06:02.487338+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "click the search box and type Minecraft",
+            "status": "completed",
+            "steps": 2,
+            "replans_used": 0,
+            "timestamp": "2026-08-25T14:25:22.123427+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "click the search box and fill the search box with Minecraft and press enter",
+            "status": "completed",
+            "steps": 2,
+            "replans_used": 0,
+            "timestamp": "2026-08-25T17:06:40.359142+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open https://www.python.org and click the Search button.",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-26T17:02:30.290363+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open https://www.python.org and navigate to Downloads.",
+            "status": "completed",
+            "steps": 2,
+            "replans_used": 0,
+            "timestamp": "2026-08-26T16:54:07.021432+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open https://www.python.org and search for \"Python\".",
+            "status": "completed",
+            "steps": 2,
+            "replans_used": 0,
+            "timestamp": "2026-08-26T16:55:33.661658+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open https://www.python.org, click Documentation, then click XYZ_NON_EXISTENT_BUTTON, then click Tutorial.",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-26T17:11:58.109803+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open https://www.wikipedia.org and search for Quantum computing.",
+            "status": "completed",
+            "steps": 2,
+            "replans_used": 0,
+            "timestamp": "2026-08-27T08:37:19.995241+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open https://www.wikipedia.org, search for Quantum computing, then click the English Wikipedia result.",
+            "status": "completed",
+            "steps": 3,
+            "replans_used": 0,
+            "timestamp": "2026-08-26T17:19:59.466460+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open https://www.python.org, wait for the page to load, then click Documentation.",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-26T17:20:58.542757+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open https://www.python.org, click Documentation, click Tutorial, click What's New, then return to Python.org.",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-26T17:25:39.437458+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open Python.org, go to Documentation, then open the Tutorial.",
+            "status": "completed",
+            "steps": 3,
+            "replans_used": 0,
+            "timestamp": "2026-08-27T06:02:55.993550+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open https://www.python.org and go to Documentation.",
+            "status": "completed",
+            "steps": 2,
+            "replans_used": 0,
+            "timestamp": "2026-08-27T08:37:20.779887+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Python.org open panni Documentation click pannu.",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-27T08:37:20.810108+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open https://www.python.org and click XYZ_NON_EXISTENT_BUTTON.",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-27T08:37:20.856167+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Search for Java tutorials",
+            "status": "completed",
+            "steps": 1,
+            "replans_used": 0,
+            "timestamp": "2026-08-27T09:02:04.783508+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "open youtube , fill the aerch box with TTF ,  press enter",
+            "status": "completed",
+            "steps": 3,
+            "replans_used": 0,
+            "timestamp": "2026-08-28T06:07:28.576952+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "open notepad",
+            "status": "completed",
+            "steps": 1,
+            "replans_used": 0,
+            "timestamp": "2026-09-14T10:24:38.363006+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "open google, type w3 schools and fill the search box with python and press enter",
+            "status": "running",
+            "steps": 0,
+            "replans_used": 0,
+            "timestamp": "2026-08-28T07:14:45.246113+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "open youtube , fill the search box with Mokka Commentry, press enter",
+            "status": "completed",
+            "steps": 3,
+            "replans_used": 0,
+            "timestamp": "2026-08-28T07:52:53.937189+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "open youtube , fill the search box with alex maths ,press enter",
+            "status": "completed",
+            "steps": 3,
+            "replans_used": 0,
+            "timestamp": "2026-09-10T09:06:28.925093+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open Chrome",
+            "status": "completed",
+            "steps": 1,
+            "replans_used": 0,
+            "timestamp": "2026-09-14T07:52:22.345297+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open VS Code",
+            "status": "completed",
+            "steps": 1,
+            "replans_used": 0,
+            "timestamp": "2026-09-14T10:59:38.077324+00:00",
+            "occurrences": 1
+        },
+        {
+            "task": "Open Notepad and type Hello from PAIOS",
+            "status": "completed",
+            "steps": 2,
+            "replans_used": 0,
+            "timestamp": "2026-09-14T12:05:46.514702+00:00",
             "occurrences": 1
         }
     ]

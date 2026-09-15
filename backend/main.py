@@ -1,10 +1,10 @@
-from app.tts_router import router as tts_router
-from app.qa_router import router as qa_router
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from app.routes.chat import router
+from app.tts_router import router as tts_router
+from app.qa_router import router as qa_router
+from app.routes.chat import router as chat_router
 from app.core.agent_controller import agent_controller
 
 
@@ -14,11 +14,9 @@ from app.core.agent_controller import agent_controller
 
 app = FastAPI(
     title="PAIOS",
-    version="0.1.0"
+    version="0.1.0",
+    description="Personal AI Operating System",
 )
-
-app.include_router(qa_router)
-app.include_router(tts_router)
 
 
 # ============================================================
@@ -27,7 +25,6 @@ app.include_router(tts_router)
 
 app.add_middleware(
     CORSMiddleware,
-
     allow_origins=[
         "http://127.0.0.1:5500",
         "http://localhost:5500",
@@ -38,28 +35,26 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://localhost:5173",
     ],
-
     allow_credentials=False,
-
     allow_methods=["*"],
-
     allow_headers=["*"],
 )
 
 
 # ============================================================
-# EXISTING CHAT ROUTER
+# ROUTERS
 # ============================================================
 
-app.include_router(router)
+app.include_router(qa_router)
+app.include_router(tts_router)
+app.include_router(chat_router)
 
 
 # ============================================================
-# EXECUTE REQUEST
+# REQUEST MODELS
 # ============================================================
 
 class ExecuteRequest(BaseModel):
-
     goal: str
 
 
@@ -69,11 +64,10 @@ class ExecuteRequest(BaseModel):
 
 @app.get("/")
 def root():
-
     return {
         "system": "PAIOS",
         "status": "ONLINE",
-        "version": "0.1.0"
+        "version": "0.1.0",
     }
 
 
@@ -83,10 +77,109 @@ def root():
 
 @app.get("/health")
 def health():
-
     return {
         "status": "healthy",
-        "system": "PAIOS"
+        "system": "PAIOS",
+    }
+
+
+# ============================================================
+# AGENT STATE SERIALIZATION
+# ============================================================
+
+def serialize_agent_state(state):
+    """
+    Convert AgentState into a JSON-safe dictionary.
+
+    PAIOS may return an AgentState object from the autonomous
+    execution pipeline. This helper prevents FastAPI from
+    failing when that object is not directly serializable.
+    """
+
+    if state is None:
+        return None
+
+    if isinstance(state, dict):
+        return state
+
+    return {
+        "status": getattr(
+            state,
+            "status",
+            None,
+        ),
+
+        "user_goal": getattr(
+            state,
+            "user_goal",
+            None,
+        ),
+
+        "current_plan": getattr(
+            state,
+            "current_plan",
+            [],
+        ),
+
+        "current_step": getattr(
+            state,
+            "current_step",
+            None,
+        ),
+
+        "completed_steps": getattr(
+            state,
+            "completed_steps",
+            [],
+        ),
+
+        "failed_step": getattr(
+            state,
+            "failed_step",
+            None,
+        ),
+
+        "last_error": getattr(
+            state,
+            "last_error",
+            None,
+        ),
+
+        "current_url": getattr(
+            state,
+            "current_url",
+            None,
+        ),
+
+        "page_title": getattr(
+            state,
+            "page_title",
+            None,
+        ),
+
+        "observations": getattr(
+            state,
+            "observations",
+            [],
+        ),
+
+        "retry_count": getattr(
+            state,
+            "retry_count",
+            0,
+        ),
+
+        "replans_used": getattr(
+            state,
+            "replans_used",
+            0,
+        ),
+
+        "replan_history": getattr(
+            state,
+            "replan_history",
+            [],
+        ),
     }
 
 
@@ -95,31 +188,26 @@ def health():
 # ============================================================
 
 @app.post("/execute")
-def execute_agent(
-    request: ExecuteRequest
-):
+def execute_agent(request: ExecuteRequest):
 
     goal = request.goal.strip()
 
     # --------------------------------------------------------
-    # Validate goal
+    # VALIDATE GOAL
     # --------------------------------------------------------
 
     if not goal:
-
         return {
             "status": "failed",
-            "error": "Goal cannot be empty."
+            "error": "Goal cannot be empty.",
         }
 
     print()
     print("=" * 60)
-    print("🚀 PAIOS API EXECUTION")
+    print("PAIOS API EXECUTION")
     print("=" * 60)
-
-    print(
-        f"Goal: {goal}"
-    )
+    print(f"Goal: {goal}")
+    print()
 
     # --------------------------------------------------------
     # RUN AGENT
@@ -127,124 +215,93 @@ def execute_agent(
 
     try:
 
-        result = agent_controller.run(
-            goal
-        )
+        result = agent_controller.run(goal)
 
-    except Exception as e:
+        # ----------------------------------------------------
+        # NORMALIZE RESULT
+        # ----------------------------------------------------
 
-        print(
-            f"❌ Agent execution failed: {e}"
-        )
+        if result is None:
+
+            result = {
+                "status": "completed",
+                "message": "Agent completed without returning a result.",
+            }
+
+        elif not isinstance(result, dict):
+
+            result = {
+                "status": "completed",
+                "result": str(result),
+            }
+
+        else:
+
+            # Make a copy so we don't mutate an object owned
+            # by another PAIOS subsystem.
+            result = dict(result)
+
+        # ----------------------------------------------------
+        # SERIALIZE AGENT STATE
+        # ----------------------------------------------------
+
+        if "state" in result:
+
+            result["state"] = serialize_agent_state(
+                result["state"]
+            )
+
+    except Exception as exc:
+
+        print()
+        print("PAIOS EXECUTION ERROR")
+        print(str(exc))
+        print()
 
         return {
             "status": "failed",
-            "error": str(e)
+            "error": str(exc),
+            "goal": goal,
         }
 
     # --------------------------------------------------------
-    # SERIALIZE AGENT STATE
+    # FINISHED
     # --------------------------------------------------------
 
-    if isinstance(result, dict):
-
-        state = result.get("state")
-
-        if state is not None:
-
-            try:
-
-                result["state"] = state.snapshot()
-
-            except Exception as e:
-
-                print(
-                    f"⚠️ Could not serialize AgentState: {e}"
-                )
-
-                result["state"] = {
-
-                    "status": getattr(
-                        state,
-                        "status",
-                        None
-                    ),
-
-                    "user_goal": getattr(
-                        state,
-                        "user_goal",
-                        None
-                    ),
-
-                    "current_plan": getattr(
-                        state,
-                        "current_plan",
-                        []
-                    ),
-
-                    "current_step": getattr(
-                        state,
-                        "current_step",
-                        None
-                    ),
-
-                    "completed_steps": getattr(
-                        state,
-                        "completed_steps",
-                        []
-                    ),
-
-                    "failed_step": getattr(
-                        state,
-                        "failed_step",
-                        None
-                    ),
-
-                    "last_error": getattr(
-                        state,
-                        "last_error",
-                        None
-                    ),
-
-                    "current_url": getattr(
-                        state,
-                        "current_url",
-                        None
-                    ),
-
-                    "page_title": getattr(
-                        state,
-                        "page_title",
-                        None
-                    ),
-
-                    "observations": getattr(
-                        state,
-                        "observations",
-                        []
-                    ),
-
-                    "retry_count": getattr(
-                        state,
-                        "retry_count",
-                        0
-                    ),
-
-                    "replans_used": getattr(
-                        state,
-                        "replans_used",
-                        0
-                    ),
-
-                    "replan_history": getattr(
-                        state,
-                        "replan_history",
-                        []
-                    )
-                }
-
     print()
-    print("✅ PAIOS API EXECUTION FINISHED")
+    print("PAIOS API EXECUTION FINISHED")
     print("=" * 60)
+    print()
 
     return result
+
+
+# ============================================================
+# SERVER STARTUP
+# ============================================================
+
+if __name__ == "__main__":
+
+    import uvicorn
+
+    print()
+    print("=" * 60)
+    print("PAIOS SERVER STARTING")
+    print("=" * 60)
+    print("System : PAIOS")
+    print("Version: 0.1.0")
+    print("Host   : 127.0.0.1")
+    print("Port   : 8000")
+    print()
+    print("API    : http://127.0.0.1:8000")
+    print("Health : http://127.0.0.1:8000/health")
+    print("Docs   : http://127.0.0.1:8000/docs")
+    print("=" * 60)
+    print()
+
+    uvicorn.run(
+        app,
+        host="127.0.0.1",
+        port=8000,
+        reload=False,
+    )
